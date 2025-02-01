@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link
+    href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <title>AgroAssistant - Profile</title>
+</head>
+<body>
+  <div class="container">
+    <aside>
+      <div class="toggle">
+        <div class="logo">
+          <img
+            src="{{ url_for('static', filename='agroAssisstantLogo.png') }}"
+            alt="Logo"
+          />
+          <h2>Agro<span class="success">Assistant</span></h2>
+        </div>
+      </div>
+
+      <div class="sidebar">
+        <a href="/" class="active">
+          <span class="material-icons-sharp">dashboard</span>
+          <h3>Dashboard</h3>
+        </a>
+        <a href="/crops/show-crops">
+          <span class="material-icons-sharp">yard</span>
+          <h3>Crops</h3>
+        </a>
+        <a href="/water-usage">
+          <span class="material-icons-sharp">water_drop</span>
+          <h3>Water Usage</h3>
+        </a>
+        <a href="/chatbot">
+          <span class="material-icons-sharp">forum</span>
+          <h3>AgriAI</h3>
+        </a>
+        <a href="/profile">
+          <span class="material-icons-sharp">account_circle</span>
+          <h3>Profile</h3>
+        </a>
+        <a href="{{ url_for('logout') }}">
+          <span class="material-icons-sharp">logout</span>
+          <h3>Logout</h3>
+        </a>
+      </div>
+    </aside>
+
+    <main>
+      <h1>Profile</h1>
+      <div class="profile">
+        <div class="profile-info">
+          <div class="profile-details">
+            <!-- Updated form structure with animated underline -->
+            <form action="/profile" method="POST">
+              <!-- Name -->
+              <div class="form-group">
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" value="{{ name }}" />
+                <!-- Animated underline element -->
+                <span class="underline"></span>
+              </div>
+
+              <!-- Email -->
+              <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" value="{{ email }}" />
+                <span class="underline"></span>
+              </div>
+
+              <!-- Address Line 1 -->
+              <div class="form-group">
+                <label for="line1">Address Line 1</label>
+                <input type="text" id="line1" name="line1" value="{{ line1 }}" />
+                <span class="underline"></span>
+              </div>
+
+              <!-- Address Line 2 -->
+              <div class="form-group">
+                <label for="line2">Address Line 2 (Optional)</label>
+                <input type="text" id="line2" name="line2" value="{{ line2 }}" />
+                <span class="underline"></span>
+              </div>
+
+              <!-- Address fields side by side -->
+              <div class="address-fields">
+                <!-- City -->
+                <div class="form-group">
+                  <label for="city">City</label>
+                  <input type="text" id="city" name="city" value="{{ city }}" />
+                  <span class="underline"></span>
+                </div>
+                <!-- State -->
+                <div class="form-group">
+                  <label for="state">State</label>
+                  <input type="text" id="state" name="state" value="{{ state }}" />
+                  <span class="underline"></span>
+                </div>
+                <!-- Zip -->
+                <div class="form-group">
+                  <label for="zip">Zip/Postal Code</label>
+                  <input type="text" id="zip" name="zip" value="{{ zip }}" />
+                  <span class="underline"></span>
+                </div>
+                <!-- Country -->
+                <div class="form-group">
+                  <label for="country">Country</label>
+                  <input type="text" id="country" name="country" value="{{ country }}" />
+                  <span class="underline"></span>
+                </div>
+              </div>
+              <div class="profile-edit">
+                <button type="submit" id="edit-profile" class="success">Edit Profile</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- Right Section -->
+    <div class="right-section">
+      <div class="nav">
+        <button id="menu-btn">
+          <span class="material-icons-sharp">menu</span>
+        </button>
+        <div class="dark-mode">
+          <span class="material-icons-sharp active">light_mode</span>
+          <span class="material-icons-sharp">dark_mode</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    /* Container styling */
+    .profile {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: auto;
+      margin-top: 50px;
+      background-color: var(--color-white);
+      box-shadow: var(--box-shadow);
+      border-radius: 15px;
+      width: 50%;
+      padding: 30px;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-40%, -60%);
+    }
+
+    .profile-info {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      width: 100%;
+      padding: 20px;
+    }
+
+    .profile-details {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .profile-edit {
+      margin-top: 20px;
+      padding-bottom: 20px;
+    }
+
+    .profile-edit button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      background-color: #4caf50;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    /* Form groups */
+    .form-group {
+      position: relative;
+      margin-bottom: 1rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .form-group label {
+      margin-bottom: 4px;
+      font-weight: bold;
+    }
+
+    /* Inputs */
+    .form-group input[type="text"],
+    .form-group input[type="email"] {
+      border: none;
+      outline: none;
+      border-bottom: 1px solid #ccc;
+      padding: 8px;
+      transition: border-color 0.2s ease-in-out;
+      width: 100%;
+      font-size: 1rem;
+      background: none;
+      color: var(--color-dark)
+    }
+
+    /* Animated underline */
+    .underline {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      height: 3px;
+      width: 0;
+      background-color: var(--color-primary);
+      transition: width 0.3s ease;
+    }
+
+    /* Animate when focused */
+    .form-group input:focus ~ .underline {
+      width: 100%;
+    }
+
+    /* Address fields container */
+    .address-fields {
+      display: flex;
+      gap: 20px;
+      margin-top: 1rem;
+      flex-wrap: wrap; /* For responsiveness on smaller screens */
+    }
+  </style>
+
+  <script src="{{ url_for('static', filename='index.js') }}"></script>
+</body>
+</html>

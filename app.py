@@ -421,9 +421,7 @@ def get_crop_data():
             doc_name = doc.id
             if uid in doc_name:
                 matching_docs.append(doc.get().to_dict())
-        print(matching_docs)
 
-        print(matching_docs)
         return jsonify(matching_docs), 200
 
     except Exception as e:
@@ -453,6 +451,43 @@ def update_crop_data():
     })
 
     return jsonify({"message": "Crop data updated successfully"}), 200
+
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    uid = session['currentUser']['uid']
+    user_data = db.collection('users').document(uid).get().to_dict()
+    name = user_data['name']
+    email = user_data['email']
+    line1 = user_data['address']['line1']
+    line2 = user_data['address']['line2']
+    city = user_data['address']['city']
+    country = user_data['address']['country']
+    state = user_data['address']['state']
+    zip = user_data['address']['zip']
+    if request.method == 'POST':
+        name = request.form['name']
+        email = request.form['email']
+        line1 = request.form['line1']
+        line2 = request.form['line2']
+        city = request.form['city']
+        country = request.form['country']
+        state = request.form['state']
+        zip = request.form['zip']
+        user_data = {
+            'name': name,
+            'email': email,
+            'address': {
+                'city': city,
+                'country': country,
+                'line1': line1,
+                'line2': line2,
+                'state': state,
+                'zip': zip
+            }
+        }
+        db.collection('users').document(uid).set(user_data)
+        return redirect(url_for('profile'))
+    return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
 
 def findPlantWithSlug(slug):
     uid = session['currentUser']['uid']
