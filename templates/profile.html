@@ -1,24 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <link
-    href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp"
-    rel="stylesheet"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet" />
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
   <title>AgroAssistant - Profile</title>
 </head>
+
 <body>
   <div class="container">
     <aside>
       <div class="toggle">
         <div class="logo">
-          <img
-            src="{{ url_for('static', filename='agroAssisstantLogo.png') }}"
-            alt="Logo"
-          />
+          <img src="{{ url_for('static', filename='agroAssisstantLogo.png') }}" alt="Logo" />
           <h2>Agro<span class="success">Assistant</span></h2>
         </div>
       </div>
@@ -39,6 +35,12 @@
         <a href="/chatbot">
           <span class="material-icons-sharp">forum</span>
           <h3>AgriAI</h3>
+        </a>
+        <a href="/diagnosis">
+          <span class="material-icons-sharp">
+            medical_services
+          </span>
+          <h3>Diagnosis</h3>
         </a>
         <a href="/profile">
           <span class="material-icons-sharp">account_circle</span>
@@ -226,7 +228,7 @@
     }
 
     /* Animate when focused */
-    .form-group input:focus ~ .underline {
+    .form-group input:focus~.underline {
       width: 100%;
     }
 
@@ -235,10 +237,12 @@
       display: flex;
       gap: 20px;
       margin-top: 1rem;
-      flex-wrap: wrap; /* For responsiveness on smaller screens */
+      flex-wrap: wrap;
+      /* For responsiveness on smaller screens */
     }
   </style>
 
   <script src="{{ url_for('static', filename='index.js') }}"></script>
 </body>
+
 </html>
