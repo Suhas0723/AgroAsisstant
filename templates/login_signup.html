@@ -6,6 +6,10 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <title>AgroAssisstant</title>
   <p id="firebase_config" style="display: none;">{{ firebase_config | tojson }}</p>
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key={{ google_api_key }}"
+    defer
+  ></script>
 </head>
 <body>
   <div class="container">
@@ -56,6 +60,7 @@
           <input type="text" id="country" name="country" placeholder="Country" required>
         </div>
         <input type="button" class="button signupbtn" value="Signup">
+        <p type="warning" id="wrongAddress" style="color:red"></p>
       </form>
       <div class="signup">
         <span class="signup">Already have an account?

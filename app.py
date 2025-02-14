@@ -20,9 +20,6 @@ app.secret_key = authfile['flask']['secretKey']
 
 firebase_config = authfile.get('firebase', {})
 
-
-
-
 cred = credentials.Certificate("tsa-agriculture-app-firebase-adminsdk-4jash-f87e772be9.json")
 firebase = firebase_admin.initialize_app(cred)
 db = firestore.client()
@@ -53,18 +50,12 @@ def get_stormglass_api():
     
     user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
     print(user, session['currentUser']['uid'])
-    address = {
-        "street": user['address']['line1'],
-        "city": user['address']['city'],
-        "state": user['address']['state'],
-        "postalcode": user['address']['zip'],
-        "country": user['address']['country'],
-    }
-    location = loc.geocode(address)
+    
+    location = user['coordinates']
 
     try:
-        lat = location.latitude
-        lng = location.longitude
+        lat = location[0]
+        lng = location[1]
     except:
         lat = 33.7501
         lng = 84.3885
@@ -281,7 +272,7 @@ def create_user():
 @app.route("/signup", methods=["GET"])
 def signup():
     if request.method == "GET":
-        return render_template("login_signup.html", firebase_config=firebase_config)
+        return render_template("login_signup.html", firebase_config=firebase_config, google_api_key=authfile['google']['apiKey'])
         
 @app.route('/api/login_user', methods=['POST'])
 def login_user():
