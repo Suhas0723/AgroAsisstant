@@ -8,6 +8,7 @@ const forgotForm=document.querySelector('.forgot.form');
 const container=document.querySelector('.container');
 const signupBtn = document.querySelector('.signupbtn');
 const anchors = document.querySelectorAll('a');
+let geocoder = new google.maps.Geocoder();
 signupForm.style.display = 'none';
 loginForm.style.display = 'block';
 forgotForm.style.display = 'none';
@@ -34,7 +35,27 @@ anchors.forEach(anchor => {
     }
   });
 });
-signupBtn.addEventListener('click', () => {
+function geocode(request) {
+  return new Promise((resolve, reject) => {
+    geocoder
+      .geocode(request)
+      .then((result) => {
+        const { results } = result;
+        // console.log(results[0].geometry.location)
+
+        const location = [results[0].geometry.location.lat(), results[0].geometry.location.lng()]
+        console.log(location)
+        resolve(location);  // Resolving lat/lng
+      })
+      .catch((e) => {
+        document.getElementById('wrongAddress').textContent = "Invalid address";
+        console.error(e);
+        reject("Invalid address");
+      });
+  });
+}
+
+signupBtn.addEventListener('click', async () => {
   console.log("signup btn clicked");
   const name = document.querySelector('#name').value;
   const username = document.querySelector('#username').value;
@@ -48,8 +69,22 @@ signupBtn.addEventListener('click', () => {
     zip: document.getElementById('zip').value,
     country: document.getElementById('country').value,
   };
-  auth.createUserWithEmailAndPassword(email, password)
+  let coordinates;
+  geocode({ 
+    address: `${address.line1} ${address.line2} ${address.city} ${address.state} ${address.zip} ${address.country}` 
+  })
+  .then((coords) => {
+    console.log(coords)
+    if (!coords) {
+      console.error("Geocoding failed, stopping signup process.");
+      return Promise.reject("Invalid address");
+    }
+
+    coordinates = coords;
+    return auth.createUserWithEmailAndPassword(email, password);
+  })
     .then((userCredential) => {
+      //console.log("YOoooooooOOOo")
       const user = userCredential.user;
       const uid = user.uid;
         user.sendEmailVerification()
@@ -65,6 +100,7 @@ signupBtn.addEventListener('click', () => {
           username: username,
           email: email,
           address: address,
+          coordinates: coordinates,
       })
       fetch('/api/create_user', {
         method: 'POST',
@@ -77,6 +113,7 @@ signupBtn.addEventListener('click', () => {
           username: username,
           email: email,
           address: address,
+          coordinates: coordinates,
         }),
       })
         .then((response) => {

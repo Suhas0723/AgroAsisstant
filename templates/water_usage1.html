@@ -240,8 +240,20 @@
         const irrigations = selectedCrop.irrigations
         console.log(irrigations)
 
-        const dates = irrigations.map(irrigation => irrigation.date);
-        const waterOutputs = irrigations.map(irrigation => irrigation.waterRate * irrigation.duration);
+        const groupedData = irrigations.reduce((acc, irrigation) => {
+            const date = irrigation.date;
+            const waterOutput = irrigation.waterRate * irrigation.duration;
+
+            if (acc[date]) {
+                acc[date] += waterOutput;
+            } else {
+                acc[date] = waterOutput;
+            }
+            return acc;
+        }, {});
+
+        const dates = Object.keys(groupedData).sort((a, b) => new Date(a) - new Date(b));
+        const waterOutputs = dates.map(date => groupedData[date]);
 
         var ctx = document.getElementById('irrigationChart').getContext('2d');
         irrigationChart = new Chart(ctx, {
