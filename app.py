@@ -470,19 +470,25 @@ def profile():
         country = request.form['country']
         state = request.form['state']
         zip = request.form['zip']
+        address = {
+            'city': city,
+            'country': country,
+            'line1': line1,
+            'line2': line2,
+            'state': state,
+            'zip': zip
+        }
         user_data = {
             'name': name,
             'email': email,
-            'address': {
-                'city': city,
-                'country': country,
-                'line1': line1,
-                'line2': line2,
-                'state': state,
-                'zip': zip
-            }
+            'address': address,
         }
         db.collection('users').document(uid).set(user_data)
+        
+        session['currentUser']['address'] = address
+        session['currentUser']['name'] = name
+        session['currentUser']['email'] = email
+        
         return redirect(url_for('profile'))
     return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
 
