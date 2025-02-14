@@ -1,0 +1,29 @@
+stormglass:
+  apiKey: c39cae06-c79b-11ef-9159-0242ac130003-c39cae74-c79b-11ef-9159-0242ac130003
+
+weatherapi:
+  apiKey: 2674c07f2c3040648d5213927242211
+
+openAI:
+  apiKey: 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
+
+plantApi:
+  apiKey: eqp58SxDWHGrtAGnelk_PsBv-yeMQMbnqihzrftex24
+
+diagnosisApi:
+  apiKey: vmK4rGRXAGRy0RSmmF1AXxVoGOLr2WksSDt1iHxbqoeaFegpgP
+
+firebase:
+  apiKey: AIzaSyABhJcmwVsQOCWPV7Ci_n7325g1igA6sls
+  authDomain: tsa-agriculture-app.firebaseapp.com
+  projectId: tsa-agriculture-app
+  storageBucket: tsa-agriculture-app.firebasestorage.app
+  messagingSenderId: 483469959423
+  appId: 1:483469959423:web:b922f8dc4bed726b4b2cca
+  measurementId: G-5RNN4D9V4V
+
+flask:
+  secretKey: 681d3f07c9bbc2b52f30c19ffbb04845
+
+google:
+  apiKey: AIzaSyBRCpXh1XWSHnnCKvXipe8zwOdExOYDGcw
