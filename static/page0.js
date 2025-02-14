@@ -41,11 +41,10 @@ function geocode(request) {
       .geocode(request)
       .then((result) => {
         const { results } = result;
-        // console.log(results[0].geometry.location)
 
         const location = [results[0].geometry.location.lat(), results[0].geometry.location.lng()]
         console.log(location)
-        resolve(location);  // Resolving lat/lng
+        resolve(location); 
       })
       .catch((e) => {
         document.getElementById('wrongAddress').textContent = "Invalid address";
