@@ -6,7 +6,6 @@ import yaml
 import requests
 import firebase_admin
 from firebase_admin import credentials,  firestore
-from geopy.geocoders import Nominatim
 import json
 import os 
 from werkzeug.utils import secure_filename
@@ -18,10 +17,6 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
-
-
-
-loc = Nominatim(user_agent="Geopy Library")
 
 with open('auth.yaml', 'r') as file:
     authfile = yaml.safe_load(file)
@@ -594,10 +589,12 @@ def diagnosis():
 
             base_url = "https://plant.id/api/v3/health_assessment?details=local_name,description,url,treatment,classification,common_names,cause"
 
+            user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
+            location = user['coordinates']
             payload = {
                 "images": [image_data],
-                "latitude": 49.207,
-                "longitude": 16.608,
+                "latitude": location[0],
+                "longitude": location[1],
             }
 
             headers = {

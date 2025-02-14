@@ -10,6 +10,9 @@ openAI:
 plantApi:
   apiKey: fixme
 
+diagnosisApi:
+  apiKey: fixme
+
 firebase:
   apiKey: fixme
   authDomain: fixme
