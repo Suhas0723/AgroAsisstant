@@ -8,8 +8,18 @@ import firebase_admin
 from firebase_admin import credentials,  firestore
 from geopy.geocoders import Nominatim
 import json
-
+import os 
+from werkzeug.utils import secure_filename
+import base64
 app = Flask(__name__)
+
+UPLOAD_FOLDER = 'uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+
 
 loc = Nominatim(user_agent="Geopy Library")
 
@@ -561,6 +571,55 @@ def growing_conditions():
         }, merge=True)
 
     return jsonify({"growth_score": score}), 200
+
+@app.route('/diagnosis', methods=['GET', 'POST'])
+def diagnosis():
+    if request.method == "POST":
+        if "plant" not in request.files:
+            return render_template("diagnosis.html", error="No Image Provided")
+
+        plant_pic = request.files["plant"]
+
+        if plant_pic.filename == '':
+            return "No selected file"
+        
+        if plant_pic:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], plant_pic.filename)
+            plant_pic.save(file_path)
+            with open(file_path, 'rb') as image_file:
+                image_data = image_file.read()
+
+            image_data = base64.b64encode(image_data).decode('utf-8')
+            image_data = f"data:image/jpg;base64,{image_data}"
+
+            base_url = "https://plant.id/api/v3/health_assessment?details=local_name,description,url,treatment,classification,common_names,cause"
+
+            payload = {
+                "images": [image_data],
+                "latitude": 49.207,
+                "longitude": 16.608,
+            }
+
+            headers = {
+                "Api-Key": authfile["diagnosisApi"]["apiKey"],
+                "Content-Type": "application/json",
+            }
+
+            response = requests.post(base_url, headers=headers, json=payload)
+            data = json.loads(response.text)
+            suggestions = data["result"]["disease"]["suggestions"]
+
+            most_probable = max(suggestions, key=lambda s: s["probability"])
+
+            disease_name = most_probable["name"]
+            description = most_probable["details"]["description"]
+            treatment_info = most_probable["details"]["treatment"]
+
+
+
+            
+        return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
+    return render_template('diagnosis.html')
 
 
 
