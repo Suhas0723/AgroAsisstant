@@ -8,6 +8,25 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <title>AgroAssistant</title>
 </head>
+<style>
+    main .analyse .moisture svg circle {
+        stroke: var(--color-success);
+        stroke-dasharray: 200;
+        transition: stroke-dashoffset 0.3s ease-in-out;
+    }
+
+    main .analyse .temperature svg circle {
+        stroke: var(--color-danger);
+        stroke-dasharray: 200;
+        transition: stroke-dashoffset 0.3s ease-in-out;
+    }
+
+    main .analyse .pH svg circle {
+        stroke: var(--color-primary);
+        stroke-dasharray: 200;
+        transition: stroke-dashoffset 0.3s ease-in-out;
+    }
+</style>
 
 <body>
 
@@ -45,6 +64,12 @@
                         forum
                     </span>
                     <h3>AgriAI</h3>
+                </a>
+                <a href="/diagnosis">
+                    <span class="material-icons-sharp">
+                        medical_services
+                    </span>
+                    <h3>Diagnosis</h3>
                 </a>
                 <a href="/profile">
                     <span class="material-icons-sharp">account_circle</span>
@@ -218,6 +243,22 @@
     </div>
 
     <script src="{{ url_for('static', filename='index.js') }}"></script>
+    <script>
+        function updateCircleProgress(selector, value) {
+            const circle = document.querySelector(selector);
+            if (circle) {
+                const max = 200;
+                const offset = max - (value / 100) * max;
+                circle.style.strokeDashoffset = offset;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            updateCircleProgress('.moisture svg circle', parseFloat("{{ soil_moisture }}"));
+            updateCircleProgress('.temperature svg circle', parseFloat("{{ soil_temperature }}"));
+            updateCircleProgress('.pH svg circle', parseFloat("{{ daily_averages[0]['UV'] }}"));
+        });
+    </script>
 </body>
 
 </html>
