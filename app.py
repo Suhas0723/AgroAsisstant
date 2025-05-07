@@ -4,13 +4,14 @@ from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import yaml
 import requests
-import firebase_admin
 from firebase_admin import credentials,  firestore
 import json
 import os 
-from werkzeug.utils import secure_filename
 import base64
+
+
 app = Flask(__name__)
+
 
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -20,6 +21,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 with open('auth.yaml', 'r') as file:
     authfile = yaml.safe_load(file)
+
+
 
 app.secret_key = authfile['flask']['secretKey']
 
@@ -618,11 +621,19 @@ def diagnosis():
             description = most_probable["details"]["description"]
             treatment_info = most_probable["details"]["treatment"]
 
-
-
-            
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
+
+@app.route('/farm')
+def farm_view():
+    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
+    location = user['coordinates']
+    lat = location[0]
+    long = location[1]
+
+
+    return render_template('farm.html', key=authfile['maps']['apiKey'], lat=lat, long=long)
+
 
 
 
