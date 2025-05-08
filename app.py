@@ -624,18 +624,36 @@ def diagnosis():
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
-@app.route('/farm')
-def farm_view():
+
+@app.route('/plots', methods=["GET"])
+def show_plots():
     user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
+    uid = session['currentUser']['uid']
     location = user['coordinates']
-    lat = location[0]
-    long = location[1]
+    lat, long = location[0], location[1]
+    user_plants = []
+    for doc in db.collection("plant_data").list_documents():
+        doc_name = doc.id
+        if uid in doc_name:
+            user_plants.append(doc.get().to_dict())
+    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants)
+
+@app.route('/plots', methods=['POST'])
+def save_plots():
+    plot_name = request.form.get("field-name")
+    crop = request.form.get("crop-type")
+    sw_lat = request.form.get("sw_lat")
+    sw_long = request.form.get("sw_long")
+    ne_lat = request.form.get('ne_lat')
+    ne_long = request.form.get("ne_long")
+
+    print(plot_name, crop, sw_lat, sw_long, ne_lat, ne_long)
+
+    return jsonify({'message': 'Plot saved successfully'}), 201
 
 
-    return render_template('farm.html', key=authfile['maps']['apiKey'], lat=lat, long=long)
 
-
-
+    
 
 if __name__ == "__main__":
     app.run(debug=True)
