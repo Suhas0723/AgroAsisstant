@@ -4,13 +4,14 @@ from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import yaml
 import requests
-import firebase_admin
 from firebase_admin import credentials,  firestore
 import json
 import os 
-from werkzeug.utils import secure_filename
 import base64
+
+
 app = Flask(__name__)
+
 
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -20,6 +21,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 with open('auth.yaml', 'r') as file:
     authfile = yaml.safe_load(file)
+
+
 
 app.secret_key = authfile['flask']['secretKey']
 
@@ -470,19 +473,25 @@ def profile():
         country = request.form['country']
         state = request.form['state']
         zip = request.form['zip']
+        address = {
+            'city': city,
+            'country': country,
+            'line1': line1,
+            'line2': line2,
+            'state': state,
+            'zip': zip
+        }
         user_data = {
             'name': name,
             'email': email,
-            'address': {
-                'city': city,
-                'country': country,
-                'line1': line1,
-                'line2': line2,
-                'state': state,
-                'zip': zip
-            }
+            'address': address,
         }
         db.collection('users').document(uid).set(user_data)
+        
+        session['currentUser']['address'] = address
+        session['currentUser']['name'] = name
+        session['currentUser']['email'] = email
+        
         return redirect(url_for('profile'))
     return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
 
@@ -612,11 +621,9 @@ def diagnosis():
             description = most_probable["details"]["description"]
             treatment_info = most_probable["details"]["treatment"]
 
-
-
-            
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
+
 
 @app.route('/plots', methods=["GET"])
 def show_plots():
