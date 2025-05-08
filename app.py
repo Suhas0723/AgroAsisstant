@@ -25,7 +25,7 @@ app.secret_key = authfile['flask']['secretKey']
 
 firebase_config = authfile.get('firebase', {})
 
-cred = credentials.Certificate("tsa-agriculture-app-firebase-adminsdk-4jash-f87e772be9.json")
+cred = credentials.Certificate("tsa-agriculture-app-firebase-adminsdk-4jash-a3a06e84e8.json")
 firebase = firebase_admin.initialize_app(cred)
 db = firestore.client()
 
