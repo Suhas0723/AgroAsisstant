@@ -4,14 +4,14 @@ from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import yaml
 import requests
-import firebase_admin
 from firebase_admin import credentials,  firestore
 import json
 import os 
-from werkzeug.utils import secure_filename
 import base64
 import re
+
 app = Flask(__name__)
+
 
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -21,6 +21,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 with open('auth.yaml', 'r') as file:
     authfile = yaml.safe_load(file)
+
+
 
 app.secret_key = authfile['flask']['secretKey']
 
@@ -640,9 +642,6 @@ def diagnosis():
             description = most_probable["details"]["description"]
             treatment_info = most_probable["details"]["treatment"]
 
-
-
-            
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
@@ -760,6 +759,36 @@ def AI_schedule():
         user_schedule_ref.add(event)  # Firestore auto-generates document ID
 
     return jsonify(schedule)
+  
+
+@app.route('/plots', methods=["GET"])
+def show_plots():
+    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
+    uid = session['currentUser']['uid']
+    location = user['coordinates']
+    lat, long = location[0], location[1]
+    user_plants = []
+    for doc in db.collection("plant_data").list_documents():
+        doc_name = doc.id
+        if uid in doc_name:
+            user_plants.append(doc.get().to_dict())
+    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants)
+
+@app.route('/plots', methods=['POST'])
+def save_plots():
+    plot_name = request.form.get("field-name")
+    crop = request.form.get("crop-type")
+    sw_lat = request.form.get("sw_lat")
+    sw_long = request.form.get("sw_long")
+    ne_lat = request.form.get('ne_lat')
+    ne_long = request.form.get("ne_long")
+
+    print(plot_name, crop, sw_lat, sw_long, ne_lat, ne_long)
+
+    return jsonify({'message': 'Plot saved successfully'}), 201
+
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
