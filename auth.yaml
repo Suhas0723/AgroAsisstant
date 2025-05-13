@@ -5,7 +5,7 @@ weatherapi:
   apiKey: 2674c07f2c3040648d5213927242211
 
 openAI:
-  apiKey:
+  apiKey: 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
 
 plantApi:
   apiKey: eqp58SxDWHGrtAGnelk_PsBv-yeMQMbnqihzrftex24
