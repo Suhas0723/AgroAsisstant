@@ -671,17 +671,35 @@ def add_event():
     if uid:
         db.collection('users').document(uid).collection('schedule').document().set(data)
 
-        user = session.get('currentUser', {})
-        schedule = user.get('schedule', [])
-        schedule.append(data)
-        user['schedule'] = schedule
-        session['currentUser'] = user
+        # user = session.get('currentUser', {})
+        # schedule = user.get('schedule', [])
+        # schedule.append(data)
+        # user['schedule'] = schedule
+        # session['currentUser'] = user
 
-        print(user)
+        # print(user)
 
         return jsonify({"success": True}), 200
     else:
         return jsonify({"error": "User not logged in"}), 401
+    
+@app.route('/api/clear_schedule', methods=['POST'])
+def clear_schedule():
+    uid = session.get('currentUser', {}).get('uid')
+    if not uid:
+        return jsonify({"error": "User not logged in"}), 401
+
+    schedule_ref = db.collection('users').document(uid).collection('schedule')
+    docs = schedule_ref.stream()
+    for doc in docs:
+        doc.reference.delete()
+
+    # Optional: clear session-stored schedule as well
+    # user = session.get('currentUser', {})
+    # user['schedule'] = []
+    # session['currentUser'] = user
+
+    return jsonify({"success": True}), 200
     
 @app.route('/api/AI_schedule', methods=['GET', 'POST'])
 def AI_schedule():
@@ -717,7 +735,7 @@ def AI_schedule():
     })
     
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
-    instructions = "I will provide a farmer's crops as well as his address, weather and soil data. Using this data, plan a schedule for the next month for the farmer, with important events in these categories: Irrigate (water the plants), Fertilize, Plant, Harvest, Prune, Checkup. Be sure the schedule is personalized to the farmer's location/weather/soil data, as well as his specific kinds of plants. Your output should be no explanation, just a JSON object with field 'schedule' with a JSON array of all the events as JSON objects. Each event should have fields date (YYY-MM-DD), type (Harvest, Irrigate, etc.), description (ex: harvest wheat crops). Feel free to have as many events necessary to adequately manage the farmer's crops, even multiple events a day."
+    instructions = "I will provide a farmer's crops as well as his address, weather and soil data. Using this data, plan a schedule for the next month for the farmer, with important events in these categories: Irrigate (water the plants), Fertilize, Plant, Harvest, Prune, Checkup. Be sure the schedule is personalized to the farmer's location/weather/soil data, as well as his specific kinds of plants. Your output should be no explanation, just a JSON object with field 'schedule' containing a JSON array of all the events as JSON objects. Each event should have the following fields: date (YYYY-MM-DD), type (e.g., Harvest, Irrigate, etc.), plant (the crop involved), notes (a description of the task), inches (number of inches of water applied — only for Irrigate events, otherwise empty string), lbs (amount of fertilizer in pounds — only for Fertilize events, otherwise empty string), and npk (the NPK ratio applied — only for Fertilize events, otherwise empty string). Feel free to include multiple events per day if necessary to manage the farmer's crops."
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[

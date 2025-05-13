@@ -120,12 +120,20 @@
                     <h3>Add Event</h3>
                 </div>
             </div>
+            <div class="notification add-reminder" id="clear-events-btn">
+                <div>
+                    <span class="material-icons-sharp">
+                        delete
+                    </span>
+                    <h3>Clear Events</h3>
+                </div>
+            </div>
         
             <div class="notification add-reminder form-container" id="irrigation-form">
                 <form id="irrigation-form-data">
                     <label for="event-date">Date</label>
                     <input type="date" id="event-date" required>
-        
+
                     <div class="form-group">
                       <label for="event-type">Type</label>
                       <select id="event-type" required>
@@ -140,11 +148,34 @@
                       </select>
                     </div>
 
+                    <!-- Plant dropdown (inserted after Type field) -->
+                    <div class="form-group">
+                      <label for="event-plant">Plant</label>
+                      <select id="event-plant">
+                        <option value="">Select Plant</option>
+                        <!-- Options can be populated dynamically -->
+                      </select>
+                    </div>
+
+                    <!-- Conditional fields -->
+                    <div id="irrigation-fields" style="display: none;">
+                      <label for="event-inches">Inches</label>
+                      <input type="number" id="event-inches" min="0" step="0.01">
+                    </div>
+
+                    <div id="fertilize-fields" style="display: none;">
+                      <label for="event-lbs">Lbs</label>
+                      <input type="number" id="event-lbs" min="0" step="0.01">
+                      
+                      <label for="event-npk">NPK Ratio</label>
+                      <input type="text" id="event-npk" pattern="^\d{1,2}-\d{1,2}-\d{1,2}$" placeholder="e.g. 10-10-10">
+                    </div>
+
                     <input type="text" id="custom-event-type" placeholder="Enter custom type" style="display: none; margin-top: 0.5rem;" />
 
                     <label for="event-description" style="display:block;">Description</label>
                     <input type="text" id="event-description" required>
-        
+
                     <button type="submit" class="save-btn" id="save-irr-btn">Save</button>
                 </form>
             </div>
@@ -177,6 +208,16 @@
 
   <script>
 
+    function formatDesc(type, plant, inches, lbs, npk, notes) {
+        if (type === 'Irrigate') {
+            return `Plant: ${plant}<br>Inches: ${inches}<br>${notes}`;
+        } else if (type === 'Fertilize') {
+            return `Plant: ${plant}<br>Lbs: ${lbs}<br>NPK: ${npk}<br>${notes}`;
+        } else {
+            return `Plant: ${plant}<br>${notes}`;
+        }
+    }
+
     const colors = {
         Harvest: '#f4e3a3',     // soft yellow
         Irrigate: '#a3c8f4',    // soft blue
@@ -204,7 +245,7 @@
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: event.description
+                        description: formatDesc(event.type, event.plant, event.inches, event.lbs, event.npk, event.notes)
                     }
                 ]);
             });     
@@ -217,19 +258,20 @@
   </script>
 
   <script>
-    // Event type dropdown and custom input logic
+    // Event type dropdown and custom input logic, plus conditional fields
     document.addEventListener('DOMContentLoaded', function() {
       const eventTypeSelect = document.getElementById('event-type');
       const customEventInput = document.getElementById('custom-event-type');
+      const irrigationFields = document.getElementById('irrigation-fields');
+      const fertilizeFields = document.getElementById('fertilize-fields');
       if (eventTypeSelect && customEventInput) {
         eventTypeSelect.addEventListener('change', () => {
-          if (eventTypeSelect.value === 'Other') {
-            customEventInput.style.display = 'block';
-            customEventInput.required = true;
-          } else {
-            customEventInput.style.display = 'none';
-            customEventInput.required = false;
-          }
+          const value = eventTypeSelect.value;
+          customEventInput.style.display = value === 'Other' ? 'block' : 'none';
+          customEventInput.required = value === 'Other';
+
+          irrigationFields.style.display = value === 'Irrigate' ? 'block' : 'none';
+          fertilizeFields.style.display = value === 'Fertilize' ? 'block' : 'none';
         });
       }
     });
@@ -244,17 +286,20 @@
     addBtn.addEventListener('click', () => {
       addBtn.style.display = 'none';
       form.style.display = 'block';
-
-    //   form.classList.add('show');
     });
-    
   
     saveBtn.addEventListener('click', (e) => {
       e.preventDefault(); // prevent actual form submission
         const date = document.getElementById('event-date').value;
         const type = document.getElementById('event-type').value;
         const customType = document.getElementById('custom-event-type').value;
-        const description = document.getElementById('event-description').value;
+        const notes = document.getElementById('event-description').value;
+        const plant = document.getElementById('event-plant').value;
+        const inches = document.getElementById('event-inches').value;
+        const lbs = document.getElementById('event-lbs').value;
+        const npk = document.getElementById('event-npk').value;
+
+        const description = formatDesc(type, plant, inches, lbs, npk, notes);
 
         $("#calendar").evoCalendar('addCalendarEvent', [
             {
@@ -274,7 +319,11 @@
             body: JSON.stringify({
                 type: type === 'Other' ? customType: type,
                 date: date,
-                description: description
+                notes: notes,
+                plant: plant,
+                inches: inches,
+                lbs: lbs,
+                npk: npk
             }), 
         })
       // Here you might process form data...
@@ -297,7 +346,7 @@
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: event.description
+                        description: formatDesc(event.type, event.plant, event.inches, event.lbs, event.npk, event.notes)
                     }
                 ]);
             });     
@@ -307,8 +356,17 @@
         });
     });
 
+    // Clear Events button logic
+    const clearBtn = document.getElementById('clear-events-btn');
+    clearBtn.addEventListener('click', () => {
+    fetch('/api/clear_schedule', { method: 'POST' })
+        .then(res => {
+        $("#calendar").evoCalendar('destroy');
+        $("#calendar").evoCalendar();
+        });
+    });
 
-  </script>
+</script>
 
 <style>
     /* Base styles */
@@ -471,6 +529,10 @@
     .add-reminder:hover {
         background-color: #66bb6a;
     }
+/* 
+    #clear-events-btn:hover {
+        background-color: #e53935 !important;
+    } */
     
     .add-reminder h3 {
         margin: 0;
