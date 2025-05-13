@@ -8,7 +8,7 @@ from firebase_admin import credentials,  firestore
 import json
 import os 
 import base64
-
+import re
 
 app = Flask(__name__)
 
@@ -204,7 +204,7 @@ def api_to_db(uid):
     stormglass_doc = db.collection("stormglass_data").document(doc_id+"-"+uid).get()
     if not stormglass_doc.exists:
         stormglass_data = get_stormglass_api()
-        print(stormglass_data)
+        #print(stormglass_data)
         db.collection("stormglass_data").document(doc_id+"-"+uid).set(stormglass_data)
         
 
@@ -233,6 +233,7 @@ def index():
 
         if len(matching_docs) > 4:
             matching_docs = matching_docs[:4]
+        # api_to_db(uid)
         daily_averages = db.collection("weatherapi_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
         stormglass_data = db.collection("stormglass_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
         soil_moisture = stormglass_data['hours'][1]['soilMoisture']['noaa']
@@ -245,11 +246,19 @@ def index():
 
 @app.route('/water-usage')
 def water_usage():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     return render_template('water_usage1.html', uid=session['currentUser']['uid'], username=session['currentUser']['name'])
 
 
 @app.route('/chatbot', methods=['GET'])
 def chatbot_page():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     return render_template('chatbot.html')
 
 @app.route('/chatbot', methods=['POST'])
@@ -302,6 +311,10 @@ def logout():
 
 @app.route('/crops/show-crops', methods=['GET'])
 def crops_page():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     uid = session['currentUser']['uid']
     collection_ref = db.collection('plant_data')
     documents = collection_ref.list_documents()
@@ -454,6 +467,10 @@ def update_crop_data():
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     uid = session['currentUser']['uid']
     user_data = db.collection('users').document(uid).get().to_dict()
     name = user_data['name']
@@ -491,7 +508,7 @@ def profile():
         session['currentUser']['address'] = address
         session['currentUser']['name'] = name
         session['currentUser']['email'] = email
-        
+
         return redirect(url_for('profile'))
     return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
 
@@ -578,6 +595,10 @@ def growing_conditions():
 
 @app.route('/diagnosis', methods=['GET', 'POST'])
 def diagnosis():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     if request.method == "POST":
         if "plant" not in request.files:
             return render_template("diagnosis.html", error="No Image Provided")
@@ -624,6 +645,121 @@ def diagnosis():
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
+@app.route('/calendar')
+def calendar():
+    return render_template('calendar.html')
+
+
+@app.route('/api/get_schedule', methods=['GET', 'POST'])
+def get_schedule():
+    uid = session.get('currentUser', {}).get('uid')
+    if not uid:
+        return jsonify([]), 401  # Unauthorized
+
+    events_ref = db.collection('users').document(uid).collection('schedule')
+    docs = events_ref.stream()
+
+    schedule = [doc.to_dict() for doc in docs]
+    return jsonify(schedule)
+
+
+@app.route('/api/add_event', methods=['GET', 'POST'])
+def add_event():
+    data = request.json
+    uid = session.get('currentUser', {}).get('uid')
+
+    if uid:
+        db.collection('users').document(uid).collection('schedule').document().set(data)
+
+        user = session.get('currentUser', {})
+        schedule = user.get('schedule', [])
+        schedule.append(data)
+        user['schedule'] = schedule
+        session['currentUser'] = user
+
+        print(user)
+
+        return jsonify({"success": True}), 200
+    else:
+        return jsonify({"error": "User not logged in"}), 401
+    
+@app.route('/api/AI_schedule', methods=['GET', 'POST'])
+def AI_schedule():
+    uid = session['currentUser']['uid']
+    collection_ref = db.collection('plant_data')
+    documents = collection_ref.list_documents()
+    matching_docs = []
+    for doc in documents:
+        doc_name = doc.id
+        if uid in doc_name:
+            matching_docs.append(doc.get().to_dict())
+
+    api_id = f"{date.today()}-{uid}"
+
+    stormglass_doc = db.collection('stormglass_data').document(api_id).get()
+    weather_doc = db.collection('weatherapi_data').document(api_id).get()
+
+    stormglass_data = stormglass_doc.to_dict() 
+    hours_data = stormglass_data.get('hours', [{}])
+
+    conditions = {
+        'soilMoisture': hours_data[0].get('soilMoisture', {}).get('sg', 0.0),
+        #'soilTemp': hours_data[0].get('soilTemperature', {}).get('sg', 0.0),
+    }
+
+    weather_data = weather_doc.to_dict()
+    daily_averages = weather_data.get('daily_averages', [{}])
+
+    conditions.update({
+        'avgCloud': daily_averages[0].get('averageCloud', 0.0),
+        'avgPrecip': daily_averages[0].get('averagePrecip', 0.0),
+        'avgTemp': daily_averages[0].get('averageTemperature', 0.0),
+    })
+    
+    client = OpenAI(api_key=authfile['openAI']['apiKey'])
+    instructions = "I will provide a farmer's crops as well as his address, weather and soil data. Using this data, plan a schedule for the next month for the farmer, with important events in these categories: Irrigate (water the plants), Fertilize, Plant, Harvest, Prune, Checkup. Be sure the schedule is personalized to the farmer's location/weather/soil data, as well as his specific kinds of plants. Your output should be no explanation, just a JSON object with field 'schedule' with a JSON array of all the events as JSON objects. Each event should have fields date (YYY-MM-DD), type (Harvest, Irrigate, etc.), description (ex: harvest wheat crops). Feel free to have as many events necessary to adequately manage the farmer's crops, even multiple events a day."
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": f"Plants: {matching_docs}, Address: {session['currentUser']['address']}, Conditions: {json.dumps(conditions)}, Current Date: {date.today()}"}
+        ],
+        response_format={ "type": "json_object" }
+    )
+
+    raw = dict(completion.choices[0].message)['content']
+
+    # Corrected regex to extract JSON array or object from inside triple backticks
+    match = re.search(r'```(?:json)?\s*(\{.*?\}|$begin:math:display$.*?$end:math:display$)\s*```', raw, re.DOTALL)
+
+    if match:
+        response = match.group(1)
+    else:
+        response = raw.strip()
+
+    print("Extracted response:\n", response)
+
+    # Parse the model's response to JSON
+    try:
+        events = json.loads(response)
+        print("Successfully parsed events.")
+    except json.JSONDecodeError as e:
+        print("Invalid JSON from model:", e)
+        print("Raw response was:\n", repr(response))
+        events = {}
+
+    # Reference user schedule in Firestore
+    uid = session['currentUser']['uid']
+    user_schedule_ref = db.collection('users').document(uid).collection('schedule')
+
+    schedule = events.get("schedule", [])
+
+    # Store each event
+    for event in schedule:
+        user_schedule_ref.add(event)  # Firestore auto-generates document ID
+
+    return jsonify(schedule)
+  
 
 @app.route('/plots', methods=["GET"])
 def show_plots():
@@ -653,7 +789,6 @@ def save_plots():
 
 
 
-    
 
 if __name__ == "__main__":
     app.run(debug=True)
