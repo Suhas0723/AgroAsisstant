@@ -840,7 +840,7 @@ def save_plots():
 def statistics():
     return render_template('statistics.html')
 
-@app.route('/api/get_irrigations', methods=['GET', 'POST'])
+@app.route('/api/get_statistics_data', methods=['GET', 'POST'])
 def get_irrigations():
     uid = session.get('currentUser', {}).get('uid')
     data = {
@@ -869,29 +869,15 @@ def get_irrigations():
             else:
                 data['harvests'][plant] = [event]
 
-
-    return jsonify(data)
-
-@app.route('/api/get_plant_specific_stats', methods=['GET', 'POST'])
-def get_plant_specific_stats():
-    data = request.json
-    plant = data.get('plant')
-    uid = session.get('currentUser', {}).get('uid')
-
     docs = db.collection('users').document(uid).collection('plots').stream()
-    for doc in docs:
-        plant_doc = doc.to_dict()
-        if plant_doc.get('name') == plant:
-            break
-    plant_data = {
-        'name' : plant_doc.get('name'),
-        'idealIrrigation' : plant_doc.get('idealIrrigation'),
-        'idealFertilizer' : plant_doc.get('idealFertilizer'),
-        'idealNPK' : plant_doc.get('idealNPK'),
-        'idealYieldGrowth' : plant_doc.get('idealYieldGrowth'),
+    plots = {doc.to_dict()['name']: doc.to_dict() for doc in docs}
+    
+    result = {
+        'schedule' : data,
+        'plots' : plots
     }
 
-    return jsonify(plant_data)
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -4,6 +4,37 @@ function calculateYieldGrowth(start, end) {
     return (((totalEnd - totalStart) / totalStart) * 100).toFixed(1);
   }
 
+  const colorPalette = [
+    "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF",
+    "#FF9F40", "#8BC34A", "#00BCD4", "#E91E63", "#9C27B0"
+  ];
+  
+  const lightPalette = [
+    "#FF8CA1", // lighter of FF6384
+    "#66BCF0", // lighter of 36A2EB
+    "#FFE27F", // lighter of FFCE56
+    "#80DDDD", // lighter of 4BC0C0
+    "#B399FF", // lighter of 9966FF
+    "#FFBB75", // lighter of FF9F40
+    "#AEE27A", // lighter of 8BC34A
+    "#4EE1F0", // lighter of 00BCD4
+    "#F06292", // lighter of E91E63
+    "#BA68C8"  // lighter of 9C27B0
+  ];
+  
+  const darkPalette = [
+    "#CC4F6A", // darker of FF6384
+    "#2C82BE", // darker of 36A2EB
+    "#CCA944", // darker of FFCE56
+    "#3A9999", // darker of 4BC0C0
+    "#7A52CC", // darker of 9966FF
+    "#CC7F33", // darker of FF9F40
+    "#6FA53A", // darker of 8BC34A
+    "#0092A6", // darker of 00BCD4
+    "#C2185B", // darker of E91E63
+    "#7B1FA2"  // darker of 9C27B0
+  ];
+
   const centerTextPlugin = {
       id: 'centerText',
       beforeDraw(chart, args, options) {
@@ -14,9 +45,10 @@ function calculateYieldGrowth(start, end) {
 
           const fontSize = options.fontSize || 16;
           ctx.font = `${fontSize}px sans-serif`;
+          ctx.fontWeight = 'bold';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = options.color || '#000';
+          //ctx.fillStyle = options.color || '#000';
 
           ctx.fillText(options.text, width / 2, height / 2);
           ctx.save();
@@ -26,6 +58,14 @@ function calculateYieldGrowth(start, end) {
 
   // Store schedule data globally so we can reuse it
   let globalScheduleData;
+  let globalPlots;
+  let plantData = {
+    name: "Default",
+    idealIrrigation: 0,
+    idealFertilizer: 0,
+    idealNPK: "0-0-0",
+    idealYieldGrowth: 0
+  };
 
   let irrigationDonut;
   let fertilizerDonut;
@@ -49,21 +89,17 @@ function calculateYieldGrowth(start, end) {
       data: {
           labels: irrigationLabels,
           datasets: [{
-          data: irrigationValues,
-          backgroundColor: ['#81c784', '#aed581', '#4caf50']
+            data: irrigationValues,
+            backgroundColor: irrigationLabels.map(plant => colorBank[plant] || '#AAAAAA')
           }]
       },
       options: {
           plugins: {
-          title: {
-              display: true,
-              text: 'Total Irrigation'
-          },
           legend: { display: false },
           centerText: {
               text: `${irrigationTotal.toFixed(1)} in`,
               fontSize: 18,
-              color: '#4caf50'
+              // color: '#4caf50'
           }
           }
       },
@@ -90,21 +126,17 @@ function calculateYieldGrowth(start, end) {
       data: {
           labels: fertilizerLabels,
           datasets: [{
-          data: fertilizerValues,
-          backgroundColor: ['#ffb74d', '#ff8a65', '#ff7043']
+            data: fertilizerValues,
+            backgroundColor: fertilizerLabels.map(plant => colorBank[plant] || '#AAAAAA')
           }]
       },
       options: {
           plugins: {
-          title: {
-              display: true,
-              text: 'Total Fertilizer'
-          },
           legend: { display: false },
           centerText: {
               text: `${fertilizerTotal.toFixed(1)} lbs`,
               fontSize: 18,
-              color: '#ff7043'
+              // color: '#ff7043'
           }
           }
       },
@@ -151,44 +183,88 @@ function calculateYieldGrowth(start, end) {
     yieldGrowthElement.style.color = growth >= 0 ? '#4caf50' : '#f44336';
   }
 
+  const colorBank = {};
+  colorBank["Default"] = "#AAAAAA";
 
-  document.addEventListener('DOMContentLoaded', function () {
-    // Initialize the comparison charts first
-    initializeComparisonCharts();
+  const plantSelector = document.getElementById('plant-selector');
 
-    fetch('/api/get_irrigations')
+  // Add this function after the colorBank declaration
+  function updateColorBankDisplay() {
+      const colorIndicators = document.querySelector('.color-indicators');
+      colorIndicators.innerHTML = ''; // Clear existing indicators
+
+      // Get unique plant names (excluding Light/Dark variants)
+      const plantNames = Object.keys(colorBank).filter(key => 
+          !key.endsWith('Light') && !key.endsWith('Dark') && key !== 'Default'
+      );
+
+      // Create color indicators for each plant
+      plantNames.forEach(plant => {
+          const indicator = document.createElement('div');
+          indicator.className = 'color-indicator';
+          
+          const dotGroup = document.createElement('div');
+          dotGroup.className = 'color-dot-group';
+          
+          const mainDot = document.createElement('div');
+          mainDot.className = 'color-dot';
+          mainDot.style.backgroundColor = colorBank[plant];
+          
+          dotGroup.appendChild(mainDot);
+          
+          const label = document.createElement('span');
+          label.className = 'color-label';
+          label.textContent = plant;
+          
+          indicator.appendChild(dotGroup);
+          indicator.appendChild(label);
+          colorIndicators.appendChild(indicator);
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {    
+    fetch('/api/get_statistics_data')
         .then(res => res.json())
         .then(data => {
-          globalScheduleData = data;
-          renderOverallStats(data);
+            console.log(data);
+            globalScheduleData = data.schedule;
+            globalPlots = data.plots;
+            
+            // Initialize color bank and plant selector
+            plantSelector.innerHTML = '<option value="" disabled selected>Select a Plant</option>';
+            Object.keys(globalPlots).forEach((plot, index) => {
+                const option = document.createElement('option');
+                option.value = plot;
+                option.textContent = plot;
+                plantSelector.appendChild(option);
+                colorBank[plot] = colorPalette[index % colorPalette.length];
+                colorBank[plot + "Light"] = lightPalette[index % lightPalette.length];
+                colorBank[plot + "Dark"] = darkPalette[index % darkPalette.length];
+            });
+
+            // Update the color bank display
+            updateColorBankDisplay();
+
+            // Initialize charts and render data
+            initializeComparisonCharts();
+            renderOverallStats(globalScheduleData);
+        })
+        .catch(error => {
+            console.error('Error fetching data:', error);
+            // Add fallback or error handling here
         });
+
+    // Add event listener for plant selector
+    plantSelector.addEventListener('change', function() {
+        const selectedPlant = this.value;
+        if (selectedPlant) {
+            plantData = globalPlots[selectedPlant];
+            updatePlantCharts(globalScheduleData);
+        }
+    });
   });
 
-  let plantData;
-  // Add event listener for plant selector
-  const plantSelector = document.getElementById('plant-selector');
-  plantSelector.addEventListener('change', function() {
-      const selectedPlant = this.value;
-      if (selectedPlant) {
-          // Use the existing schedule data
-          fetch('/api/get_plant_specific_stats', {
-              method: 'POST',
-              headers: {
-                  'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                  plant: selectedPlant
-              })
-          })
-          .then(response => response.json())
-          .then(plantDatas => {
-              plantData = plantDatas;
-              updatePlantCharts(globalScheduleData);
-          })
-          .catch(error => console.error('Error fetching plant data:', error));
-      }
-  });
-
+  
   let lineGraphs = {
     irrigationLine: null,
     fertilizerLine: null,
@@ -196,10 +272,6 @@ function calculateYieldGrowth(start, end) {
 
   function lineGraph(data, varName, title, yAxisLabel, chartName) {
       const datasets = [];
-      const plantColors = [
-        '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#f44336',
-        '#00bcd4', '#8bc34a', '#ffc107', '#e91e63', '#3f51b5'
-      ];
   
       const allDates = new Set();
   
@@ -207,7 +279,7 @@ function calculateYieldGrowth(start, end) {
       Object.values(data).forEach(plant => {
           Object.values(plant).forEach(event => {
               allDates.add(event.date);
-              console.log(event)
+              //console.log(event)
           });
       });
   
@@ -227,7 +299,7 @@ function calculateYieldGrowth(start, end) {
         datasets.push({
           label: plant,
           data: irrigationSeries,
-          borderColor: plantColors[colorIndex % plantColors.length],
+          borderColor: colorBank[plant] || '#AAAAAA',
           backgroundColor: 'transparent',
           borderWidth: 2,
           tension: 0.3
@@ -251,15 +323,12 @@ function calculateYieldGrowth(start, end) {
                   display: false // move key to the top
               },
               tooltip: {
-              mode: 'index',
-              intersect: false
+                mode: 'index',
+                intersect: false
               },
               title: {
-              display: true,
-              text: title,
-              // padding: {
-              //     bottom: 10 // adds space between title and legend
-              // }
+                display: true,
+                text: title,
               }
           },
           interaction: {
@@ -310,23 +379,17 @@ function calculateYieldGrowth(start, end) {
         irrigationComparisonChart = new Chart(irrigationCtx, {
             type: 'bar',
             data: {
-                labels: ['Irrigation (inches)'],
-                datasets: [
-                    {
-                        label: 'Ideal Amount',
-                        data: [0],
-                        backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    },
-                    {
-                        label: 'Average Amount',
-                        data: [0],
-                        backgroundColor: 'rgba(255, 99, 132, 0.5)',
-                        borderColor: 'rgba(255, 99, 132, 1)',
-                        borderWidth: 1
-                    }
-                ]
+              labels: ['Ideal', 'Average'],
+              datasets: [
+                {
+                  label: plantData.name,
+                  data: [plantData.idealIrrigation, averageIrrigationInches],
+                  backgroundColor: [
+                    colorBank[plantData.name + "Light"],
+                    colorBank[plantData.name + "Dark"]
+                  ]
+                }
+              ]
             },
             options: {
                 responsive: true,
@@ -335,7 +398,7 @@ function calculateYieldGrowth(start, end) {
                         beginAtZero: true,
                         title: {
                             display: true,
-                            text: 'Inches'
+                            text: 'Water (in)'
                         }
                     }
                 },
@@ -363,19 +426,19 @@ function calculateYieldGrowth(start, end) {
                   {
                       label: 'Nitrogen (N)',
                       data: [0, 0],
-                      backgroundColor: '#2196f3',  // Blue for Nitrogen
+                      backgroundColor: colorBank[plantData.name + "Light"],
                       stack: 'Stack 0'
                   },
                   {
                       label: 'Phosphorus (P)',
                       data: [0, 0],
-                      backgroundColor: '#4caf50',  // Green for Phosphorus
+                      backgroundColor: colorBank[plantData.name],
                       stack: 'Stack 0'
                   },
                   {
                       label: 'Potassium (K)',
                       data: [0, 0],
-                      backgroundColor: '#ff9800',  // Orange for Potassium
+                      backgroundColor: colorBank[plantData.name + "Dark"],
                       stack: 'Stack 0'
                   }
               ]
@@ -391,7 +454,7 @@ function calculateYieldGrowth(start, end) {
                       beginAtZero: true,
                       title: {
                           display: true,
-                          text: 'Pounds'
+                          text: 'Fertilizer (lbs)'
                       }
                   }
               },
@@ -422,8 +485,8 @@ function calculateYieldGrowth(start, end) {
               datasets: [{
                   label: 'Harvest Yield',
                   data: [],
-                  borderColor: '#4caf50',
-                  backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                  borderColor: colorBank[plantData.name + "Dark"],
+                  backgroundColor: colorBank[plantData.name + "Light"],
                   fill: true,
                   tension: 0.4
               }]
@@ -538,8 +601,8 @@ function calculateYieldGrowth(start, end) {
       updateProgressCircle('fertilizer-efficiency', 'fertilizer-progress', fertilizerEfficiency);
 
       // Update Irrigation Comparison
-      irrigationComparisonChart.data.datasets[0].data = [plantData.idealIrrigation];
-      irrigationComparisonChart.data.datasets[1].data = [averageIrrigationInches];
+      irrigationComparisonChart.data.datasets[0].data = [plantData.idealIrrigation, averageIrrigationInches];
+      irrigationComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Dark"]];
       irrigationComparisonChart.update();
 
       // Update Combined Fertilizer and NPK Comparison
@@ -560,8 +623,11 @@ function calculateYieldGrowth(start, end) {
       const actualK = (actualNPK[2] / actualTotal) * averageFertilizerLbs;
       
       fertilizerComparisonChart.data.datasets[0].data = [idealN, actualN];    // N
+      fertilizerComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Light"]];
       fertilizerComparisonChart.data.datasets[1].data = [idealP, actualP];    // P
+      fertilizerComparisonChart.data.datasets[1].backgroundColor = [colorBank[plantData.name], colorBank[plantData.name]];
       fertilizerComparisonChart.data.datasets[2].data = [idealK, actualK];    // K
+      fertilizerComparisonChart.data.datasets[2].backgroundColor = [colorBank[plantData.name + "Dark"], colorBank[plantData.name + "Dark"]];
       
       fertilizerComparisonChart.update();
 
@@ -580,6 +646,8 @@ function calculateYieldGrowth(start, end) {
           // Update chart
           harvestGrowthChart.data.labels = harvestData.map(h => h.date);
           harvestGrowthChart.data.datasets[0].data = harvestData.map(h => parseFloat(h.yield));
+          harvestGrowthChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Light"]];
+          harvestGrowthChart.data.datasets[0].borderColor = [colorBank[plantData.name + "Dark"], colorBank[plantData.name + "Dark"]];
           harvestGrowthChart.update();
           
           // Update growth rate display with progress circle
