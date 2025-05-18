@@ -665,11 +665,25 @@ def get_schedule():
 
 @app.route('/api/add_event', methods=['GET', 'POST'])
 def add_event():
-    data = request.json
+    raw = request.json
     uid = session.get('currentUser', {}).get('uid')
 
     if uid:
-        db.collection('users').document(uid).collection('schedule').document().set(data)
+        event = {
+            'date' : raw['date'],
+            'type' : raw['type'],
+            'plant' : raw['plant'],
+            'notes' : raw['notes'],
+        }
+
+        if raw['type'] == 'Irrigate':
+            event['inches'] = float(raw['inches'])
+        elif raw['type'] == 'Fertilize':
+            event['fert'] = float(raw['fert'])
+            event['npk'] = raw['npk']
+        elif raw['type'] == 'Harvest':
+            event['yield'] = float(raw['yield'])
+        db.collection('users').document(uid).collection('schedule').document().set(event)
 
         # user = session.get('currentUser', {})
         # schedule = user.get('schedule', [])
@@ -735,7 +749,24 @@ def AI_schedule():
     })
     
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
-    instructions = "I will provide a farmer's crops as well as his address, weather and soil data. Using this data, plan a schedule for the next month for the farmer, with important events in these categories: Irrigate (water the plants), Fertilize, Plant, Harvest, Prune, Checkup. Be sure the schedule is personalized to the farmer's location/weather/soil data, as well as his specific kinds of plants. Your output should be no explanation, just a JSON object with field 'schedule' containing a JSON array of all the events as JSON objects. Each event should have the following fields: date (YYYY-MM-DD), type (e.g., Harvest, Irrigate, etc.), plant (the crop involved), notes (a description of the task), inches (number of inches of water applied — only for Irrigate events, otherwise empty string), lbs (amount of fertilizer in pounds — only for Fertilize events, otherwise empty string), and npk (the NPK ratio applied — only for Fertilize events, otherwise empty string). Feel free to include multiple events per day if necessary to manage the farmer's crops."
+    instructions = """
+    Using the provided crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
+    Tailor the plan to the specific crops and conditions.
+
+    Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
+    - date (YYYY-MM-DD)
+    - type (e.g., Irrigate, Harvest)
+    - plant (the crop involved)
+    - notes (short description of the task)
+
+    Additionally, include:
+    - inches (number of inches of water) — only for Irrigate events
+    - fert and npk (fertilizer amount in pounds and ideal NPK ratio) — only for Fertilize events
+    - yield (yield amount in pounds) - only for Harvest events
+    Ensure these fields are ideal for each plant's needs
+
+    Only include fields relevant to the event type. No explanation, just the JSON output.
+    """
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -805,8 +836,62 @@ def save_plots():
 
     return jsonify({'message': 'Plot saved successfully'}), 201
 
+@app.route('/statistics')
+def statistics():
+    return render_template('statistics.html')
+
+@app.route('/api/get_irrigations', methods=['GET', 'POST'])
+def get_irrigations():
+    uid = session.get('currentUser', {}).get('uid')
+    data = {
+        'irrigations' : {},
+        'fertilizers' : {},
+        'harvests' : {}
+    }
+    
+    docs = db.collection('users').document(uid).collection('schedule').stream()
+    for doc in docs:
+        event = doc.to_dict()
+        plant = event.get('plant')
+        if event.get('type') == 'Irrigate':
+            if plant in data['irrigations'].keys():
+                data['irrigations'][plant].append(event)
+            else:
+                data['irrigations'][plant] = [event]
+        elif event.get('type') == 'Fertilize':
+            if plant in data['fertilizers'].keys():
+                data['fertilizers'][plant].append(event)
+            else:
+                data['fertilizers'][plant] = [event]
+        elif event.get('type') == 'Harvest':
+            if plant in data['harvests'].keys():
+                data['harvests'][plant].append(event)
+            else:
+                data['harvests'][plant] = [event]
 
 
+    return jsonify(data)
+
+@app.route('/api/get_plant_specific_stats', methods=['GET', 'POST'])
+def get_plant_specific_stats():
+    data = request.json
+    plant = data.get('plant')
+    uid = session.get('currentUser', {}).get('uid')
+
+    docs = db.collection('users').document(uid).collection('plots').stream()
+    for doc in docs:
+        plant_doc = doc.to_dict()
+        if plant_doc.get('name') == plant:
+            break
+    plant_data = {
+        'name' : plant_doc.get('name'),
+        'idealIrrigation' : plant_doc.get('idealIrrigation'),
+        'idealFertilizer' : plant_doc.get('idealFertilizer'),
+        'idealNPK' : plant_doc.get('idealNPK'),
+        'idealYieldGrowth' : plant_doc.get('idealYieldGrowth'),
+    }
+
+    return jsonify(plant_data)
 
 if __name__ == "__main__":
     app.run(debug=True)

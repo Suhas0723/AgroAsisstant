@@ -153,6 +153,10 @@
                       <label for="event-plant">Plant</label>
                       <select id="event-plant">
                         <option value="">Select Plant</option>
+                        <option value="Canada Balsam">Canada Balsam</option>
+                        <option value="Fragrant Dracaena">Fragrant Dracaena</option>
+                        <option value="Eglatine">Eglatine</option>
+                        <option value="Potato">Potato</option>
                         <!-- Options can be populated dynamically -->
                       </select>
                     </div>
@@ -164,11 +168,16 @@
                     </div>
 
                     <div id="fertilize-fields" style="display: none;">
-                      <label for="event-lbs">Lbs</label>
+                      <label for="event-lbs">Amount (lbs)</label>
                       <input type="number" id="event-lbs" min="0" step="0.01">
                       
                       <label for="event-npk">NPK Ratio</label>
                       <input type="text" id="event-npk" pattern="^\d{1,2}-\d{1,2}-\d{1,2}$" placeholder="e.g. 10-10-10">
+                    </div>
+
+                    <div id="harvest-fields" style="display: none;">
+                      <label for="event-expected-yield">Yield (lbs)</label>
+                      <input type="number" id="event-expected-yield" min="0" step="0.01">
                     </div>
 
                     <input type="text" id="custom-event-type" placeholder="Enter custom type" style="display: none; margin-top: 0.5rem;" />
@@ -208,11 +217,13 @@
 
   <script>
 
-    function formatDesc(type, plant, inches, lbs, npk, notes) {
+    function formatDesc(type, plant, inches, fert, npk, yield, notes) {
         if (type === 'Irrigate') {
             return `Plant: ${plant}<br>Inches: ${inches}<br>${notes}`;
         } else if (type === 'Fertilize') {
-            return `Plant: ${plant}<br>Lbs: ${lbs}<br>NPK: ${npk}<br>${notes}`;
+            return `Plant: ${plant}<br>Amount (lbs): ${fert}<br>NPK: ${npk}<br>${notes}`;
+        } else if (type === 'Harvest') {
+            return `Plant: ${plant}<br>Yield (lbs): ${yield}<br>${notes}`;
         } else {
             return `Plant: ${plant}<br>${notes}`;
         }
@@ -245,7 +256,7 @@
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plant, event.inches, event.lbs, event.npk, event.notes)
+                        description: formatDesc(event.type, event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });     
@@ -264,6 +275,7 @@
       const customEventInput = document.getElementById('custom-event-type');
       const irrigationFields = document.getElementById('irrigation-fields');
       const fertilizeFields = document.getElementById('fertilize-fields');
+      const harvestField = document.getElementById('harvest-fields');
       if (eventTypeSelect && customEventInput) {
         eventTypeSelect.addEventListener('change', () => {
           const value = eventTypeSelect.value;
@@ -272,6 +284,7 @@
 
           irrigationFields.style.display = value === 'Irrigate' ? 'block' : 'none';
           fertilizeFields.style.display = value === 'Fertilize' ? 'block' : 'none';
+          harvestField.style.display = value === 'Harvest' ? 'block' : 'none';
         });
       }
     });
@@ -296,10 +309,11 @@
         const notes = document.getElementById('event-description').value;
         const plant = document.getElementById('event-plant').value;
         const inches = document.getElementById('event-inches').value;
-        const lbs = document.getElementById('event-lbs').value;
+        const fert = document.getElementById('event-lbs').value;
         const npk = document.getElementById('event-npk').value;
+        const yield = document.getElementById('event-expected-yield').value;
 
-        const description = formatDesc(type, plant, inches, lbs, npk, notes);
+        const description = formatDesc(type, plant, inches, fert, npk, yield, notes);
 
         $("#calendar").evoCalendar('addCalendarEvent', [
             {
@@ -322,8 +336,9 @@
                 notes: notes,
                 plant: plant,
                 inches: inches,
-                lbs: lbs,
-                npk: npk
+                fert: fert,
+                npk: npk,
+                yield: yield
             }), 
         })
       // Here you might process form data...
@@ -346,7 +361,7 @@
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plant, event.inches, event.lbs, event.npk, event.notes)
+                        description: formatDesc(event.type, event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });     
