@@ -82,17 +82,19 @@
             <h1>Statistics</h1>
             
             <div class="color-bank">
-                <h3>Plant Color Legend</h3>
-                <div class="color-indicators">
-                    <!-- This will be populated dynamically in JavaScript -->
-                </div>
-            </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
 
-            <div class="overall-stats">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h2>Overall Farm Statistics</h2>
-                    <div class="time-range-selector">
-                        <select id="time-range" class="time-select">
+                <div class="legend-container">
+                    <h3>Legend</h3>
+                    <div class="color-indicators">
+                        <!-- This will be populated dynamically in JavaScript -->
+                    </div>
+                </div>
+                
+                <div class="selector-group">
+                    <h3>Date Range</h3>
+                    <div class="select-container">
+                        <select id="time-range" class="styled-select">
                             <option value="week">Last Week</option>
                             <option value="month" selected>Last Month</option>
                             <option value="3months">Last 3 Months</option>
@@ -100,29 +102,18 @@
                         </select>
                     </div>
                 </div>
-                <div style="display: flex; gap: 2rem;">
-                    <div style="width: 75%; display: flex; flex-direction: column;">
-                        <!-- Irrigation Donut -->
-                        <div class="new-users">
-                            <div class="user-list">
-                                <canvas id="fertilizerLine"></canvas>
-                            </div>
-                        </div>
+                </div>
+            </div>
 
-                        <!-- Fertilizer Donut -->
-                        <div class="new-users">
-                            <div class="user-list">
-                                <canvas id="irrigationLine"></canvas>
-                            </div>
-                        </div>
-
-                    </div>
-
+            <div class="overall-stats">
+                <h2>Overall Farm Statistics</h2>
+                <div style="display: flex; gap: 2rem">
                     <!-- Line Charts Stack -->
                     <div style="width: 25%; display: flex; flex-direction: column;">
                         <!-- Fertilizer Line -->
                         <div class="new-users" style="flex: 1;">
                             <div class="user-list">
+                                <h3 style="text-align: center;">Total Irrigation</h3>
                                 <canvas id="irrigationDonut"></canvas>
                             </div>
                         </div>
@@ -130,14 +121,15 @@
                         <!-- Irrigation Line -->
                         <div class="new-users" style="flex: 1;">
                             <div class="user-list">
+                                <h3 style="text-align: center;">Total Fertilizer</h3>
                                 <canvas id="fertilizerDonut"></canvas>
                             </div>
                         </div>
 
                         <!-- Growth Rate -->
                         <div class="new-users" style="flex: 1;">
-                            <div class="user-list" style="display: flex; flex-direction: column;">
-                                <h3 style="text-align: center;">Yield Growth</h3>
+                            <div class="user-list" style="display: flex; flex-direction: column; align-items: center;">
+                                <h3 style="text-align: center;">Total Harvest</h3>
                                 <div class="progresss" id="yield-progress">
                                     <svg>
                                         <circle cx="38" cy="38" r="36"></circle>
@@ -149,6 +141,24 @@
                             </div>
                         </div>
                     </div>
+
+                    <div style="width: 75%; display: flex; flex-direction: column;">
+                        <!-- Fertilizer Line -->
+                        <div class="new-users">
+                            <div class="user-list">
+                                <canvas id="irrigationLine"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Irrigation Line -->
+                        <div class="new-users">
+                            <div class="user-list">
+                                <canvas id="fertilizerLine"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    
                 </div>
             </div>
         </main>
@@ -179,15 +189,15 @@
                 </div>
 
                 <div class="plant-profile">
-                    <h2>Plant Specific Statistics</h2>
-                <select id="plant-selector">
-                    <option value="" disabled selected>Select a Plant</option>
-                    <option value="Rosa rubiginosa">Rosa rubiginosa</option>
-                    <option value="Solanum tuberosum">Solanum tuberosum</option>
-                    <option value="Dracaena fragrans">Dracaena fragrans</option>
-                    <option value="Fragrant Dracaena">Fragrant Dracaena</option>
-                </select>
-                <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; margin-top: 1rem;">
+                        <h2>Plant Specific Statistics</h2>
+                        <div class="select-container">
+                            <select id="plant-selector" class="styled-select">
+                                <option value="" disabled selected>Select a Plant</option>
+                            </select>
+                        </div>
+                    </div>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
                     <!-- Irrigation Comparison -->
                     <div class="new-users" style="flex: 1; min-width: 300px;">
                         <div class="user-list">
