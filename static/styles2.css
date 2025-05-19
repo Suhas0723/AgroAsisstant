@@ -306,6 +306,14 @@ main .analyse .progresss .circle-icon {
     width: 100%;
 }
 
+main .color-bank {
+    transition: all 0.3s ease;
+}
+
+main .color-bank:hover {
+    box-shadow: none;
+}
+
 main .new-users {
     margin-top: 1.3rem;
 }

@@ -333,3 +333,102 @@ main {
     width: 100% !important;
     height: auto !important;
 }
+
+.color-bank {
+    background: var(--color-white);
+    padding: 1rem;
+    border-radius: var(--card-border-radius);
+    margin-bottom: 1rem;
+    box-shadow: var(--box-shadow);
+}
+
+.color-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+}
+
+.color-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    background: var(--color-light);
+}
+
+.color-dot-group {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.color-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.color-label {
+    font-size: 0.9rem;
+    color: var(--color-dark);
+}
+
+.selector-group {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.select-container {
+    position: relative;
+    min-width: 200px;
+}
+
+.select-container::after {
+    content: '\e5c5';  /* Material Icons arrow_drop_down */
+    font-family: 'Material Icons Sharp';
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--color-success);
+    pointer-events: none;
+}
+
+select.styled-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    padding: 0.8rem 2.5rem 0.8rem 1rem;
+    border: 2px solid var(--color-success);
+    border-radius: 8px;
+    background: var(--color-white);
+    color: var(--color-dark);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+select.styled-select:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+select.styled-select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+}
+
+select.styled-select option {
+    padding: 10px;
+    background: var(--color-white);
+    color: var(--color-dark);
+}
+
+/* Add animation for the select arrow */
+.select-container:hover::after {
+    transform: translateY(-50%) rotate(180deg);
+    transition: transform 0.3s ease;
+}
