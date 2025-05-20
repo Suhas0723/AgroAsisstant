@@ -107,36 +107,41 @@
       </div>
       <div class="sidebar">
         <a href="/">
-          <span class="material-icons-sharp">dashboard</span>
-          <h3>Dashboard</h3>
+            <span class="material-icons-sharp">dashboard</span>
+            <h3>Dashboard</h3>
+        </a>
+        <a href="/calendar">
+            <span class="material-icons-sharp">calendar_month</span>
+            <h3>Calendar</h3>
         </a>
         <a href="/crops/show-crops">
-          <span class="material-icons-sharp">yard</span>
-          <h3>Crops</h3>
+            <span class="material-icons-sharp">yard</span>
+            <h3>Crops</h3>
         </a>
-        <a href="/water-usage">
-          <span class="material-icons-sharp">water_drop</span>
-          <h3>Water Usage</h3>
+        <a href="/statistics">
+            <span class="material-icons-sharp">bar_chart</span>
+            <h3>Statistics</h3>
         </a>
         <a href="/chatbot">
-          <span class="material-icons-sharp">forum</span>
-          <h3>AgriAI</h3>
+            <span class="material-icons-sharp">forum</span>
+            <h3>AgriAI</h3>
         </a>
-        <a href="/diagnosis">
-          <span class="material-icons-sharp">
-              medical_services
-          </span>
-          <h3>Diagnosis</h3>
-      </a>
+        <a href="/diagnosis" class="active">
+            <span class="material-icons-sharp">
+                medical_services
+            </span>
+            <h3>Diagnosis</h3>
+        </a>
         <a href="/profile">
-          <span class="material-icons-sharp">account_circle</span>
-          <h3>Profile</h3>
+            <span class="material-icons-sharp">account_circle</span>
+            <h3>Profile</h3>
         </a>
-        <a href="{{ url_for('logout') }}" id="logout-btn">
-          <span class="material-icons-sharp">logout</span>
-          <h3>Logout</h3>
+
+        <a href="/logout">
+            <span class="material-icons-sharp">logout</span>
+            <h3>Logout</h3>
         </a>
-      </div>
+    </div>
     </aside>
 
     <main>
