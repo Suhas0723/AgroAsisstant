@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Sharp" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles2.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='statistics.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@3.2.0/dist/fullcalendar.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.1/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@3.2.0/dist/fullcalendar.min.js"></script>
+
+    <p style="display:none" id="uid">{{ uid }}</p>
+
+    <title>AgroAssisstant</title>
+</head>
+
+<body>
+
+    <div class="container">
+        <aside>
+            <div class="toggle">
+                <div class="logo">
+                    <img src="{{ url_for('static', filename='agroAssisstantLogo.png') }}" style="width: 25px; height: 25px">
+                    <h2>Agro<span class="success">Assistant</span></h2>
+                </div>
+                <div class="close" id="close-btn">
+                    <span class="material-icons-sharp">
+                        close
+                    </span>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <a href="/">
+                    <span class="material-icons-sharp">
+                        dashboard
+                    </span>
+                    <h3>Dashboard</h3>
+                </a>
+                <a href="/crops/show-crops">
+                    <span class="material-icons-sharp">
+                        yard
+                    </span>
+                    <h3>Crops</h3>
+                </a>
+                <a href="/water-usage">
+                    <span class="material-icons-sharp">
+                        water_drop
+                    </span>
+                    <h3>Water Usage</h3>
+                </a>
+                <a href="/chatbot">
+                    <span class="material-icons-sharp">
+                        forum
+                    </span>
+                    <h3>AgriAI</h3>
+                </a>
+                <a href="/diagnosis">
+                    <span class="material-icons-sharp">
+                        medical_services
+                    </span>
+                    <h3>Diagnosis</h3>
+                </a>
+                <a href="/profile">
+                    <span class="material-icons-sharp">account_circle</span>
+                    <h3>Profile</h3>
+                </a>
+                <a href="{{ url_for('logout') }}" id="logout-btn">
+                    <span class="material-icons-sharp">
+                        logout
+                    </span>
+                    <h3>Logout</h3>
+                </a>
+            </div>
+        </aside>
+        
+        <main>
+            <h1>Statistics</h1>
+            
+            <div class="color-bank">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+
+                <div class="legend-container">
+                    <h3>Legend</h3>
+                    <div class="color-indicators">
+                        <!-- This will be populated dynamically in JavaScript -->
+                    </div>
+                </div>
+                
+                <div class="selector-group">
+                    <h3>Date Range</h3>
+                    <div class="select-container">
+                        <select id="time-range" class="styled-select">
+                            <option value="week">Last Week</option>
+                            <option value="month" selected>Last Month</option>
+                            <option value="3months">Last 3 Months</option>
+                            <option value="year">Last Year</option>
+                        </select>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+            <div class="overall-stats">
+                <h2>Overall Farm Statistics</h2>
+                <div style="display: flex; gap: 2rem">
+                    <!-- Line Charts Stack -->
+                    <div style="width: 25%; display: flex; flex-direction: column;">
+                        <!-- Fertilizer Line -->
+                        <div class="new-users" style="flex: 1;">
+                            <div class="user-list">
+                                <h3 style="text-align: center;">Total Irrigation</h3>
+                                <canvas id="irrigationDonut"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Irrigation Line -->
+                        <div class="new-users" style="flex: 1;">
+                            <div class="user-list">
+                                <h3 style="text-align: center;">Total Fertilizer</h3>
+                                <canvas id="fertilizerDonut"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Growth Rate -->
+                        <div class="new-users" style="flex: 1;">
+                            <div class="user-list" style="display: flex; flex-direction: column; align-items: center;">
+                                <h3 style="text-align: center;">Total Harvest</h3>
+                                <div class="progresss" id="yield-progress">
+                                    <svg>
+                                        <circle cx="38" cy="38" r="36"></circle>
+                                    </svg>
+                                    <div class="percentage">
+                                        <h2 id="yield-growth">0%</h2>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="width: 75%; display: flex; flex-direction: column;">
+                        <!-- Fertilizer Line -->
+                        <div class="new-users">
+                            <div class="user-list">
+                                <canvas id="irrigationLine"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Irrigation Line -->
+                        <div class="new-users">
+                            <div class="user-list">
+                                <canvas id="fertilizerLine"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    
+                </div>
+            </div>
+        </main>
+
+
+            <div class="right-section">
+                <div class="nav">
+                    <button id="menu-btn">
+                        <span class="material-icons-sharp">
+                            menu
+                        </span>
+                    </button>
+                    <div class="dark-mode">
+                        <span class="material-icons-sharp active">
+                            light_mode
+                        </span>
+                        <span class="material-icons-sharp">
+                            dark_mode
+                        </span>
+                    </div>
+    
+                    <div class="profile">
+                        <div class="info">
+                            <p>Hey, <b>{{ username }}</b></p>
+                        </div>
+                    </div>
+    
+                </div>
+
+                <div class="plant-profile">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; margin-top: 1rem;">
+                        <h2>Plant Specific Statistics</h2>
+                        <div class="select-container">
+                            <select id="plant-selector" class="styled-select">
+                                <option value="" disabled selected>Select a Plant</option>
+                            </select>
+                        </div>
+                    </div>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <!-- Irrigation Comparison -->
+                    <div class="new-users" style="flex: 1; min-width: 300px;">
+                        <div class="user-list">
+                            <h3>Irrigation Efficiency</h3>
+                            <div class="stat-container">
+                                <div class="graph-container">
+                                    <canvas id="irrigationComparison"></canvas>
+                                </div>
+                                <div class="progresss" id="irrigation-progress">
+                                    <svg>
+                                        <circle cx="38" cy="38" r="36"></circle>
+                                    </svg>
+                                    <div class="percentage">
+                                        <h2 id="irrigation-efficiency">0%</h2>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fertilizer Amount Comparison -->
+                    <div class="new-users" style="flex: 1; min-width: 300px;">
+                        <div class="user-list">
+                            <h3>Fertilizer Efficiency</h3>
+                            <div class="stat-container">
+                                <div class="graph-container">
+                                    <canvas id="fertilizerComparison"></canvas>
+                                </div>
+                                <div class="progresss" id="fertilizer-progress">
+                                    <svg>
+                                        <circle cx="38" cy="38" r="36"></circle>
+                                    </svg>
+                                    <div class="percentage">
+                                        <h2 id="fertilizer-efficiency">0%</h2>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Harvest Growth -->
+                    <div class="new-users" style="flex: 1; min-width: 300px;">
+                        <div class="user-list">
+                            <h3>Harvest Growth</h3>
+                            <div class="stat-container">
+                                <div class="graph-container">
+                                    <canvas id="harvestGrowth"></canvas>
+                                </div>
+                                <div class="progresss" id="growth-progress">
+                                    <svg>
+                                        <circle cx="38" cy="38" r="36"></circle>
+                                    </svg>
+                                    <div class="percentage">
+                                        <h2 id="growth-rate">0%</h2>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- <script src="{{ url_for('static', filename='orders.js') }}"></script> -->
+    <script src="{{ url_for('static', filename='index.js') }}"></script>
+    <script src="{{ url_for('static', filename='statistics.js') }}"></script>
+    
+</body>
+
+</html>
