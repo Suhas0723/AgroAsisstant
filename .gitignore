@@ -1,13 +1,3 @@
-.venv/
 auth.yaml
-*.pyc
 __pycache__/
-instance/
-.pytest_cache/
-.coverage
-htmlcov/
-dist/
-build/
-*.egg-info/
-.vscode/
 tsa-agriculture-app-firebase-adminsdk-4jash-a3a06e84e8.json
