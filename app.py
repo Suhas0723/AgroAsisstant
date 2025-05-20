@@ -879,6 +879,29 @@ def save_plots():
     sw_long = request.form.get("sw_long")
     ne_lat = request.form.get('ne_lat')
     ne_long = request.form.get("ne_long")
+
+    #plants = db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).get().to_dict()['plants']
+
+    client = OpenAI(api_key=authfile['openAI']['apiKey'])
+    instructions = """
+    Given the location and different plants on a plot of land, return the ideal inches of water, 
+    pounds/acre of fertilizer, and NPK ratio the overall plot needs on average each irrigation/fertilization. 
+    Ensure the ideal values are based on each plant's needs.
+    Return a JSON object with fields:
+    - idealIrrigation (number of inches of water)
+    - idealFertilizer (number of pounds of fertilizer)
+    - idealNPK (NPK ratio formatted as 'XX-XX-XX')
+    """
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": f"Plants: {crop}, Address: {session['currentUser']['address']}"}
+        ],
+        response_format={ "type": "json_object" }
+    )
+
+    raw = dict(completion.choices[0].message)['content']
     
     plant_data = {
         'crop': crop,
@@ -887,12 +910,11 @@ def save_plots():
         'sw_long': sw_long,
         'ne_lat': ne_lat,
         'ne_long': ne_long,
-        'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long)
+        'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long),
+        'idealValues': raw
     }
     
     db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)
-
-
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({ 'message': 'Plot saved' })
