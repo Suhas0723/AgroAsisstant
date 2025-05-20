@@ -412,11 +412,11 @@ function calculateYieldGrowth(start, end) {
               labels: ['Ideal', 'Average'],
               datasets: [
                 {
-                  label: plantData.name,
-                  data: [plantData.idealIrrigation, averageIrrigationInches],
+                  label: plantData.plot_name,
+                  data: [plantData.idealValues.idealIrrigation, averageIrrigationInches],
                   backgroundColor: [
-                    colorBank[plantData.name + "Light"],
-                    colorBank[plantData.name + "Dark"]
+                    colorBank[plantData.plot_name + "Light"],
+                    colorBank[plantData.plot_name + "Dark"]
                   ]
                 }
               ]
@@ -440,7 +440,7 @@ function calculateYieldGrowth(start, end) {
             }
         });
       } else {
-        irrigationComparisonChart.data.datasets[0].data = [plantData.idealIrrigation];
+        irrigationComparisonChart.data.datasets[0].data = [plantData.idealValues.idealIrrigation];
         irrigationComparisonChart.data.datasets[1].data = [averageIrrigationInches];
         irrigationComparisonChart.update();
       }
@@ -456,19 +456,19 @@ function calculateYieldGrowth(start, end) {
                   {
                       label: 'Nitrogen (N)',
                       data: [0, 0],
-                      backgroundColor: colorBank[plantData.name + "Light"],
+                      backgroundColor: colorBank[plantData.plot_name + "Light"],
                       stack: 'Stack 0'
                   },
                   {
                       label: 'Phosphorus (P)',
                       data: [0, 0],
-                      backgroundColor: colorBank[plantData.name],
+                      backgroundColor: colorBank[plantData.plot_name],
                       stack: 'Stack 0'
                   },
                   {
                       label: 'Potassium (K)',
                       data: [0, 0],
-                      backgroundColor: colorBank[plantData.name + "Dark"],
+                      backgroundColor: colorBank[plantData.plot_name + "Dark"],
                       stack: 'Stack 0'
                   }
               ]
@@ -500,7 +500,7 @@ function calculateYieldGrowth(start, end) {
           }
       });
       } else {
-        fertilizerComparisonChart.data.datasets[0].data = [plantData.idealFertilizer];
+        fertilizerComparisonChart.data.datasets[0].data = [plantData.idealValues.idealFertilizer];
         fertilizerComparisonChart.data.datasets[1].data = [averageFertilizerLbs];
         fertilizerComparisonChart.update();
       }
@@ -515,8 +515,8 @@ function calculateYieldGrowth(start, end) {
               datasets: [{
                   label: 'Harvest Yield',
                   data: [],
-                  borderColor: colorBank[plantData.name + "Dark"],
-                  backgroundColor: colorBank[plantData.name + "Light"],
+                  borderColor: colorBank[plantData.plot_name + "Dark"],
+                  backgroundColor: colorBank[plantData.plot_name + "Light"],
                   fill: true,
                   tension: 0.4
               }]
@@ -591,7 +591,7 @@ function calculateYieldGrowth(start, end) {
 
   // Function to update charts with plant-specific data
   function updatePlantCharts(scheduleData) {
-      const plant = plantData.name;
+      const plant = plantData.plot_name;
       
       // Calculate average irrigation from schedule
       averageIrrigationInches = 0;
@@ -621,9 +621,9 @@ function calculateYieldGrowth(start, end) {
       }
 
       // Calculate efficiencies
-      const irrigationEfficiency = calculateEfficiency(averageIrrigationInches, plantData.idealIrrigation);
-      const fertilizerAmountEfficiency = calculateEfficiency(averageFertilizerLbs, plantData.idealFertilizer);
-      const npkEfficiency = calculateNPKEfficiency(averageNPK, plantData.idealNPK);
+      const irrigationEfficiency = calculateEfficiency(averageIrrigationInches, plantData.idealValues.idealIrrigation);
+      const fertilizerAmountEfficiency = calculateEfficiency(averageFertilizerLbs, plantData.idealValues.idealFertilizer);
+      const npkEfficiency = calculateNPKEfficiency(averageNPK, plantData.idealValues.idealNPK);
       const fertilizerEfficiency = (fertilizerAmountEfficiency * 0.5) + (npkEfficiency * 0.5);
 
       // Update efficiency displays
@@ -631,12 +631,12 @@ function calculateYieldGrowth(start, end) {
       updateProgressCircle('fertilizer-efficiency', 'fertilizer-progress', fertilizerEfficiency);
 
       // Update Irrigation Comparison
-      irrigationComparisonChart.data.datasets[0].data = [plantData.idealIrrigation, averageIrrigationInches];
-      irrigationComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Dark"]];
+      irrigationComparisonChart.data.datasets[0].data = [plantData.idealValues.idealIrrigation, averageIrrigationInches];
+      irrigationComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.plot_name + "Light"], colorBank[plantData.plot_name + "Dark"]];
       irrigationComparisonChart.update();
 
       // Update Combined Fertilizer and NPK Comparison
-      const idealNPK = parseNPK(plantData.idealNPK);
+      const idealNPK = parseNPK(plantData.idealValues.idealNPK);
       const actualNPK = parseNPK(averageNPK);
       
       // Calculate the portion of fertilizer for each nutrient
@@ -644,20 +644,20 @@ function calculateYieldGrowth(start, end) {
       const actualTotal = actualNPK.reduce((a, b) => a + b, 0);
       
       // Calculate pounds of each nutrient based on ratios
-      const idealN = (idealNPK[0] / idealTotal) * plantData.idealFertilizer;
-      const idealP = (idealNPK[1] / idealTotal) * plantData.idealFertilizer;
-      const idealK = (idealNPK[2] / idealTotal) * plantData.idealFertilizer;
+      const idealN = (idealNPK[0] / idealTotal) * plantData.idealValues.idealFertilizer;
+      const idealP = (idealNPK[1] / idealTotal) * plantData.idealValues.idealFertilizer;
+      const idealK = (idealNPK[2] / idealTotal) * plantData.idealValues.idealFertilizer;
       
       const actualN = (actualNPK[0] / actualTotal) * averageFertilizerLbs;
       const actualP = (actualNPK[1] / actualTotal) * averageFertilizerLbs;
       const actualK = (actualNPK[2] / actualTotal) * averageFertilizerLbs;
       
       fertilizerComparisonChart.data.datasets[0].data = [idealN, actualN];    // N
-      fertilizerComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Light"]];
+      fertilizerComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.plot_name + "Light"], colorBank[plantData.plot_name + "Light"]];
       fertilizerComparisonChart.data.datasets[1].data = [idealP, actualP];    // P
-      fertilizerComparisonChart.data.datasets[1].backgroundColor = [colorBank[plantData.name], colorBank[plantData.name]];
+      fertilizerComparisonChart.data.datasets[1].backgroundColor = [colorBank[plantData.plot_name], colorBank[plantData.plot_name]];
       fertilizerComparisonChart.data.datasets[2].data = [idealK, actualK];    // K
-      fertilizerComparisonChart.data.datasets[2].backgroundColor = [colorBank[plantData.name + "Dark"], colorBank[plantData.name + "Dark"]];
+      fertilizerComparisonChart.data.datasets[2].backgroundColor = [colorBank[plantData.plot_name + "Dark"], colorBank[plantData.plot_name + "Dark"]];
       
       fertilizerComparisonChart.update();
 
@@ -676,8 +676,8 @@ function calculateYieldGrowth(start, end) {
           // Update chart
           harvestGrowthChart.data.labels = harvestData.map(h => h.date);
           harvestGrowthChart.data.datasets[0].data = harvestData.map(h => parseFloat(h.yield));
-          harvestGrowthChart.data.datasets[0].backgroundColor = [colorBank[plantData.name + "Light"], colorBank[plantData.name + "Light"]];
-          harvestGrowthChart.data.datasets[0].borderColor = [colorBank[plantData.name + "Dark"], colorBank[plantData.name + "Dark"]];
+          harvestGrowthChart.data.datasets[0].backgroundColor = [colorBank[plantData.plot_name + "Light"], colorBank[plantData.plot_name + "Light"]];
+          harvestGrowthChart.data.datasets[0].borderColor = [colorBank[plantData.plot_name + "Dark"], colorBank[plantData.plot_name + "Dark"]];
           harvestGrowthChart.update();
           
           // Update growth rate display with progress circle
