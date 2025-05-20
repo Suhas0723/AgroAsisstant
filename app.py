@@ -645,6 +645,17 @@ def diagnosis():
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
+
+@app.route('/plots', methods=["GET"])
+def show_plots():
+    uid = session['currentUser']['uid']
+    user = db.collection("users").document(uid).get().to_dict()
+    plots = db.collection("users").document(uid).collection("plots").list_documents()
+    plot_list = []
+    for plot in plots:
+        plot_data = plot.get().to_dict()
+        plot_list.append(plot_data)
+
 @app.route('/calendar')
 def calendar():
     return render_template('calendar.html')
@@ -821,7 +832,9 @@ def show_plots():
         doc_name = doc.id
         if uid in doc_name:
             user_plants.append(doc.get().to_dict())
-    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants)
+
+    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list)
+
 
 @app.route('/plots', methods=['POST'])
 def save_plots():
@@ -831,6 +844,26 @@ def save_plots():
     sw_long = request.form.get("sw_long")
     ne_lat = request.form.get('ne_lat')
     ne_long = request.form.get("ne_long")
+    
+    plant_data = {
+        'crop': crop,
+        'plot_name': plot_name,
+        'sw_lat': sw_lat,
+        'sw_long': sw_long,
+        'ne_lat': ne_lat,
+        'ne_long': ne_long
+    }
+    
+    db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)
+
+
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({ 'message': 'Plot saved' })
+    else:
+        return redirect(url_for('show_plots'))
+
+
 
     print(plot_name, crop, sw_lat, sw_long, ne_lat, ne_long)
 
@@ -876,6 +909,7 @@ def get_irrigations():
         'schedule' : data,
         'plots' : plots
     }
+
 
     return jsonify(result)
 
