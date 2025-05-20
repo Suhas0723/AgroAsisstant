@@ -223,13 +223,13 @@
 
     function formatDesc(type, plant, inches, fert, npk, yield, notes) {
         if (type === 'Irrigate') {
-            return `Plant: ${plant}<br>Inches: ${inches}<br>${notes}`;
+            return `Plot: ${plant}<br>Inches: ${inches}<br>${notes}`;
         } else if (type === 'Fertilize') {
-            return `Plant: ${plant}<br>Amount (lbs): ${fert}<br>NPK: ${npk}<br>${notes}`;
+            return `Plot: ${plant}<br>Amount (lbs): ${fert}<br>NPK: ${npk}<br>${notes}`;
         } else if (type === 'Harvest') {
-            return `Plant: ${plant}<br>Yield (lbs): ${yield}<br>${notes}`;
+            return `Plot: ${plant}<br>Yield (lbs): ${yield}<br>${notes}`;
         } else {
-            return `Plant: ${plant}<br>${notes}`;
+            return `Plot: ${plant}<br>${notes}`;
         }
     }
 
@@ -269,6 +269,14 @@
         })
         .catch(error => {
             console.error('Error fetching crop data:', error);
+        });
+
+        const plotSelect = document.getElementById('event-plant')
+        plots.forEach(plot => {
+            const option = document.createElement('option');
+            option.value = plot.name;
+            option.textContent = plot.name;
+            plotSelect.appendChild(option);
         });
     });
     
