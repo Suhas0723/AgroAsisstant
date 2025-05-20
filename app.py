@@ -9,6 +9,7 @@ import json
 import os 
 import base64
 import re
+from math import radians, sin, cos, sqrt, atan2
 
 app = Flask(__name__)
 
@@ -645,17 +646,6 @@ def diagnosis():
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
-
-@app.route('/plots', methods=["GET"])
-def show_plots():
-    uid = session['currentUser']['uid']
-    user = db.collection("users").document(uid).get().to_dict()
-    plots = db.collection("users").document(uid).collection("plots").list_documents()
-    plot_list = []
-    for plot in plots:
-        plot_data = plot.get().to_dict()
-        plot_list.append(plot_data)
-
 @app.route('/calendar')
 def calendar():
     return render_template('calendar.html')
@@ -681,6 +671,8 @@ def get_schedule():
     }
 
     return jsonify(result)
+
+
 
 
 @app.route('/api/add_event', methods=['GET', 'POST'])
@@ -770,19 +762,19 @@ def AI_schedule():
     
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
     instructions = """
-    Using the provided crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
+    Using the provided plots, crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
     Tailor the plan to the specific crops and conditions.
 
     Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
     - date (YYYY-MM-DD)
     - type (e.g., Irrigate, Harvest)
-    - plant (the crop involved)
+    - plot (the plot involved)
     - notes (short description of the task)
 
     Additionally, include:
     - inches (number of inches of water) — only for Irrigate events
-    - fert and npk (fertilizer amount in pounds and ideal NPK ratio) — only for Fertilize events
-    - yield (yield amount in pounds) - only for Harvest events
+    - fert and npk (fertilizer amount in pounds/acre and ideal NPK ratio) — only for Fertilize events
+    - yield (yield amount in pounds/acre) - only for Harvest events
     Ensure these fields are ideal for each plant's needs
 
     Only include fields relevant to the event type. No explanation, just the JSON output.
@@ -829,6 +821,36 @@ def AI_schedule():
 
     return jsonify(schedule)
   
+def calculate_acres(ne_lat, ne_long, sw_lat, sw_long):
+    # Earth's radius in meters
+    R = 6371000
+    
+    # Convert coordinates to radians
+    ne_lat_rad = radians(ne_lat)
+    ne_long_rad = radians(ne_long)
+    sw_lat_rad = radians(sw_lat)
+    sw_long_rad = radians(sw_long)
+    
+    # Calculate the distance between points
+    dlat = ne_lat_rad - sw_lat_rad
+    dlong = ne_long_rad - sw_long_rad
+    
+    # Calculate the area using the Haversine formula
+    a = sin(dlat/2)**2 + cos(sw_lat_rad) * cos(ne_lat_rad) * sin(dlong/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    distance = R * c
+    
+    # Calculate width and height
+    width = distance * cos(sw_lat_rad)  # Width at the latitude
+    height = distance  # Height is the direct distance
+    
+    # Calculate area in square meters
+    area_sqm = width * height
+    
+    # Convert square meters to acres (1 acre = 4046.86 square meters)
+    acres = area_sqm / 4046.86
+    
+    return round(acres, 2)
 
 @app.route('/plots', methods=["GET"])
 def show_plots():
@@ -860,7 +882,8 @@ def save_plots():
         'sw_lat': sw_lat,
         'sw_long': sw_long,
         'ne_lat': ne_lat,
-        'ne_long': ne_long
+        'ne_long': ne_long,
+        'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long)
     }
     
     db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)

@@ -75,10 +75,15 @@ function calculateYieldGrowth(start, end) {
     const fertilizer = data.fertilizers;
     const harvests = data.harvests;
 
-    // Donut: Total Inches
+    // Donut: Total Gallons
     const irrigationLabels = Object.keys(irrigation);
     const irrigationValues = irrigationLabels.map(plant => {
-        const total = irrigation[plant].reduce((sum, e) => sum + parseFloat(e.inches || 0), 0);
+        const total = irrigation[plant].reduce((sum, e) => {
+            const inches = parseFloat(e.inches || 0);
+            const acres = parseFloat(globalPlots[plant]?.acres || 0);
+            const gallons = inches * acres * 27154; // Convert inches to gallons
+            return sum + gallons;
+        }, 0);
         return total.toFixed(2);
     });
     const irrigationTotal = irrigationValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
@@ -97,9 +102,8 @@ function calculateYieldGrowth(start, end) {
           plugins: {
           legend: { display: false },
           centerText: {
-              text: `${irrigationTotal.toFixed(1)} in`,
+              text: `${(irrigationTotal/1000).toFixed(1)}k gal`,
               fontSize: 18,
-              // color: '#4caf50'
           }
           }
       },
@@ -108,15 +112,20 @@ function calculateYieldGrowth(start, end) {
     } else {
       irrigationDonut.data.labels = irrigationLabels;
       irrigationDonut.data.datasets[0].data = irrigationValues;
-      irrigationDonut.options.plugins.centerText.text = `${irrigationTotal.toFixed(1)} in`;
+      irrigationDonut.options.plugins.centerText.text = `${(irrigationTotal/1000).toFixed(1)}k gal`;
       irrigationDonut.update();
     }
 
-    // Donut: Total Lbs Fertilizer
+    // Donut: Total Pounds
     const fertilizerLabels = Object.keys(fertilizer);
     const fertilizerValues = fertilizerLabels.map(plant => {
-      const total = fertilizer[plant].reduce((sum, e) => sum + parseFloat(e.fert || 0), 0);
-      return total.toFixed(2);
+        const total = fertilizer[plant].reduce((sum, e) => {
+            const pounds = parseFloat(e.fert || 0);
+            const acres = parseFloat(globalPlots[plant]?.acres || 0);
+            const totalPounds = pounds * acres; // Convert to total pounds
+            return sum + totalPounds;
+        }, 0);
+        return total.toFixed(2);
     });
     const fertilizerTotal = fertilizerValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
 
@@ -134,9 +143,8 @@ function calculateYieldGrowth(start, end) {
           plugins: {
           legend: { display: false },
           centerText: {
-              text: `${fertilizerTotal.toFixed(1)} lbs`,
+              text: `${(fertilizerTotal/1000).toFixed(1)}k lbs`,
               fontSize: 18,
-              // color: '#ff7043'
           }
           }
       },
@@ -145,12 +153,13 @@ function calculateYieldGrowth(start, end) {
     } else {
       fertilizerDonut.data.labels = fertilizerLabels;
       fertilizerDonut.data.datasets[0].data = fertilizerValues;
-      fertilizerDonut.options.plugins.centerText.text = `${fertilizerTotal.toFixed(1)} lbs`;
+      fertilizerDonut.options.plugins.centerText.text = `${(fertilizerTotal/1000).toFixed(1)}k lbs`;
       fertilizerDonut.update();
     }
 
-    lineGraph(fertilizer, 'fert', 'Fertilizer over Time', 'Fertilizer (lbs)', 'fertilizerLine')
-    lineGraph(irrigation, 'inches', 'Irrigation over Time', 'Water (in)', 'irrigationLine')
+    // Line graphs with converted values
+    lineGraph(fertilizer, 'fert', 'Fertilizer over Time', 'Fertilizer (lbs)', 'fertilizerLine', true);
+    lineGraph(irrigation, 'inches', 'Irrigation over Time', 'Water (gal)', 'irrigationLine', true);
     //lineGraph(harvests, 'yield', 'Harvest Yield Over Time', 'Yield (lbs)', 'harvestLine')
 
     // Line: Harvest Yield
@@ -270,7 +279,7 @@ function calculateYieldGrowth(start, end) {
     fertilizerLine: null,
   };
 
-  function lineGraph(data, varName, title, yAxisLabel, chartName) {
+  function lineGraph(data, varName, title, yAxisLabel, chartName, convertUnits = false) {
       const datasets = [];
   
       const allDates = new Set();
@@ -279,7 +288,6 @@ function calculateYieldGrowth(start, end) {
       Object.values(data).forEach(plant => {
           Object.values(plant).forEach(event => {
               allDates.add(event.date);
-              //console.log(event)
           });
       });
   
@@ -291,14 +299,23 @@ function calculateYieldGrowth(start, end) {
       for (const [plant, events] of Object.entries(data)) {
         const dateMap = {};
         events.forEach(event => {
-          dateMap[event.date] = parseFloat(event[varName]) || 0;
+          let value = parseFloat(event[varName]) || 0;
+          if (convertUnits) {
+              const acres = parseFloat(globalPlots[plant]?.acres || 0);
+              if (varName === 'inches') {
+                  value = value * acres * 27154; // Convert inches to gallons
+              } else if (varName === 'fert') {
+                  value = value * acres; // Convert to total pounds
+              }
+          }
+          dateMap[event.date] = value;
         });
   
-        const irrigationSeries = sortedDates.map(date => dateMap[date] || 0);
+        const series = sortedDates.map(date => dateMap[date] || 0);
   
         datasets.push({
           label: plant,
-          data: irrigationSeries,
+          data: series,
           borderColor: colorBank[plant] || '#AAAAAA',
           backgroundColor: 'transparent',
           borderWidth: 2,
@@ -320,11 +337,24 @@ function calculateYieldGrowth(start, end) {
           responsive: true,
           plugins: {
               legend: {
-                  display: false // move key to the top
+                  display: false
               },
               tooltip: {
                 mode: 'index',
-                intersect: false
+                intersect: false,
+                callbacks: {
+                    label: function(context) {
+                        let value = context.raw;
+                        if (convertUnits) {
+                            if (varName === 'inches') {
+                                value = (value/1000).toFixed(1) + 'k gal';
+                            } else if (varName === 'fert') {
+                                value = (value/1000).toFixed(1) + 'k lbs';
+                            }
+                        }
+                        return `${context.dataset.label}: ${value}`;
+                    }
+                }
               },
               title: {
                 display: true,
