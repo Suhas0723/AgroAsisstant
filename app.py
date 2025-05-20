@@ -660,7 +660,16 @@ def get_schedule():
     docs = events_ref.stream()
 
     schedule = [doc.to_dict() for doc in docs]
-    return jsonify(schedule)
+
+    docs = db.collection('users').document(uid).collection('plots').stream()
+    plots = {doc.to_dict()['name']: doc.to_dict() for doc in docs}
+    
+    result = {
+        'schedule' : schedule,
+        'plots' : plots
+    }
+
+    return jsonify(result)
 
 
 @app.route('/api/add_event', methods=['GET', 'POST'])
