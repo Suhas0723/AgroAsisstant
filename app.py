@@ -4,13 +4,14 @@ from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 import yaml
 import requests
-import firebase_admin
 from firebase_admin import credentials,  firestore
 import json
 import os 
-from werkzeug.utils import secure_filename
 import base64
+import re
+
 app = Flask(__name__)
+
 
 UPLOAD_FOLDER = 'uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -20,6 +21,8 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 with open('auth.yaml', 'r') as file:
     authfile = yaml.safe_load(file)
+
+
 
 app.secret_key = authfile['flask']['secretKey']
 
@@ -201,7 +204,7 @@ def api_to_db(uid):
     stormglass_doc = db.collection("stormglass_data").document(doc_id+"-"+uid).get()
     if not stormglass_doc.exists:
         stormglass_data = get_stormglass_api()
-        print(stormglass_data)
+        #print(stormglass_data)
         db.collection("stormglass_data").document(doc_id+"-"+uid).set(stormglass_data)
         
 
@@ -230,6 +233,7 @@ def index():
 
         if len(matching_docs) > 4:
             matching_docs = matching_docs[:4]
+        # api_to_db(uid)
         daily_averages = db.collection("weatherapi_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
         stormglass_data = db.collection("stormglass_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
         soil_moisture = stormglass_data['hours'][1]['soilMoisture']['noaa']
@@ -242,11 +246,19 @@ def index():
 
 @app.route('/water-usage')
 def water_usage():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     return render_template('water_usage1.html', uid=session['currentUser']['uid'], username=session['currentUser']['name'])
 
 
 @app.route('/chatbot', methods=['GET'])
 def chatbot_page():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     return render_template('chatbot.html')
 
 @app.route('/chatbot', methods=['POST'])
@@ -299,6 +311,10 @@ def logout():
 
 @app.route('/crops/show-crops', methods=['GET'])
 def crops_page():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     uid = session['currentUser']['uid']
     collection_ref = db.collection('plant_data')
     documents = collection_ref.list_documents()
@@ -451,6 +467,10 @@ def update_crop_data():
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     uid = session['currentUser']['uid']
     user_data = db.collection('users').document(uid).get().to_dict()
     name = user_data['name']
@@ -470,19 +490,25 @@ def profile():
         country = request.form['country']
         state = request.form['state']
         zip = request.form['zip']
+        address = {
+            'city': city,
+            'country': country,
+            'line1': line1,
+            'line2': line2,
+            'state': state,
+            'zip': zip
+        }
         user_data = {
             'name': name,
             'email': email,
-            'address': {
-                'city': city,
-                'country': country,
-                'line1': line1,
-                'line2': line2,
-                'state': state,
-                'zip': zip
-            }
+            'address': address,
         }
         db.collection('users').document(uid).set(user_data)
+        
+        session['currentUser']['address'] = address
+        session['currentUser']['name'] = name
+        session['currentUser']['email'] = email
+
         return redirect(url_for('profile'))
     return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
 
@@ -569,6 +595,10 @@ def growing_conditions():
 
 @app.route('/diagnosis', methods=['GET', 'POST'])
 def diagnosis():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     if request.method == "POST":
         if "plant" not in request.files:
             return render_template("diagnosis.html", error="No Image Provided")
@@ -612,11 +642,9 @@ def diagnosis():
             description = most_probable["details"]["description"]
             treatment_info = most_probable["details"]["treatment"]
 
-
-
-            
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
+
 
 @app.route('/plots', methods=["GET"])
 def show_plots():
@@ -627,6 +655,176 @@ def show_plots():
     for plot in plots:
         plot_data = plot.get().to_dict()
         plot_list.append(plot_data)
+
+@app.route('/calendar')
+def calendar():
+    return render_template('calendar.html')
+
+
+@app.route('/api/get_schedule', methods=['GET', 'POST'])
+def get_schedule():
+    uid = session.get('currentUser', {}).get('uid')
+    if not uid:
+        return jsonify([]), 401  # Unauthorized
+
+    events_ref = db.collection('users').document(uid).collection('schedule')
+    docs = events_ref.stream()
+
+    schedule = [doc.to_dict() for doc in docs]
+    return jsonify(schedule)
+
+
+@app.route('/api/add_event', methods=['GET', 'POST'])
+def add_event():
+    raw = request.json
+    uid = session.get('currentUser', {}).get('uid')
+
+    if uid:
+        event = {
+            'date' : raw['date'],
+            'type' : raw['type'],
+            'plant' : raw['plant'],
+            'notes' : raw['notes'],
+        }
+
+        if raw['type'] == 'Irrigate':
+            event['inches'] = float(raw['inches'])
+        elif raw['type'] == 'Fertilize':
+            event['fert'] = float(raw['fert'])
+            event['npk'] = raw['npk']
+        elif raw['type'] == 'Harvest':
+            event['yield'] = float(raw['yield'])
+        db.collection('users').document(uid).collection('schedule').document().set(event)
+
+        # user = session.get('currentUser', {})
+        # schedule = user.get('schedule', [])
+        # schedule.append(data)
+        # user['schedule'] = schedule
+        # session['currentUser'] = user
+
+        # print(user)
+
+        return jsonify({"success": True}), 200
+    else:
+        return jsonify({"error": "User not logged in"}), 401
+    
+@app.route('/api/clear_schedule', methods=['POST'])
+def clear_schedule():
+    uid = session.get('currentUser', {}).get('uid')
+    if not uid:
+        return jsonify({"error": "User not logged in"}), 401
+
+    schedule_ref = db.collection('users').document(uid).collection('schedule')
+    docs = schedule_ref.stream()
+    for doc in docs:
+        doc.reference.delete()
+
+    # Optional: clear session-stored schedule as well
+    # user = session.get('currentUser', {})
+    # user['schedule'] = []
+    # session['currentUser'] = user
+
+    return jsonify({"success": True}), 200
+    
+@app.route('/api/AI_schedule', methods=['GET', 'POST'])
+def AI_schedule():
+    uid = session['currentUser']['uid']
+    collection_ref = db.collection('plant_data')
+    documents = collection_ref.list_documents()
+    matching_docs = []
+    for doc in documents:
+        doc_name = doc.id
+        if uid in doc_name:
+            matching_docs.append(doc.get().to_dict())
+
+    api_id = f"{date.today()}-{uid}"
+
+    stormglass_doc = db.collection('stormglass_data').document(api_id).get()
+    weather_doc = db.collection('weatherapi_data').document(api_id).get()
+
+    stormglass_data = stormglass_doc.to_dict() 
+    hours_data = stormglass_data.get('hours', [{}])
+
+    conditions = {
+        'soilMoisture': hours_data[0].get('soilMoisture', {}).get('sg', 0.0),
+        #'soilTemp': hours_data[0].get('soilTemperature', {}).get('sg', 0.0),
+    }
+
+    weather_data = weather_doc.to_dict()
+    daily_averages = weather_data.get('daily_averages', [{}])
+
+    conditions.update({
+        'avgCloud': daily_averages[0].get('averageCloud', 0.0),
+        'avgPrecip': daily_averages[0].get('averagePrecip', 0.0),
+        'avgTemp': daily_averages[0].get('averageTemperature', 0.0),
+    })
+    
+    client = OpenAI(api_key=authfile['openAI']['apiKey'])
+    instructions = """
+    Using the provided crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
+    Tailor the plan to the specific crops and conditions.
+
+    Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
+    - date (YYYY-MM-DD)
+    - type (e.g., Irrigate, Harvest)
+    - plant (the crop involved)
+    - notes (short description of the task)
+
+    Additionally, include:
+    - inches (number of inches of water) — only for Irrigate events
+    - fert and npk (fertilizer amount in pounds and ideal NPK ratio) — only for Fertilize events
+    - yield (yield amount in pounds) - only for Harvest events
+    Ensure these fields are ideal for each plant's needs
+
+    Only include fields relevant to the event type. No explanation, just the JSON output.
+    """
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": f"Plants: {matching_docs}, Address: {session['currentUser']['address']}, Conditions: {json.dumps(conditions)}, Current Date: {date.today()}"}
+        ],
+        response_format={ "type": "json_object" }
+    )
+
+    raw = dict(completion.choices[0].message)['content']
+
+    # Corrected regex to extract JSON array or object from inside triple backticks
+    match = re.search(r'```(?:json)?\s*(\{.*?\}|$begin:math:display$.*?$end:math:display$)\s*```', raw, re.DOTALL)
+
+    if match:
+        response = match.group(1)
+    else:
+        response = raw.strip()
+
+    print("Extracted response:\n", response)
+
+    # Parse the model's response to JSON
+    try:
+        events = json.loads(response)
+        print("Successfully parsed events.")
+    except json.JSONDecodeError as e:
+        print("Invalid JSON from model:", e)
+        print("Raw response was:\n", repr(response))
+        events = {}
+
+    # Reference user schedule in Firestore
+    uid = session['currentUser']['uid']
+    user_schedule_ref = db.collection('users').document(uid).collection('schedule')
+
+    schedule = events.get("schedule", [])
+
+    # Store each event
+    for event in schedule:
+        user_schedule_ref.add(event)  # Firestore auto-generates document ID
+
+    return jsonify(schedule)
+  
+
+@app.route('/plots', methods=["GET"])
+def show_plots():
+    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
+    uid = session['currentUser']['uid']
     location = user['coordinates']
     lat, long = location[0], location[1]
     user_plants = []
@@ -634,7 +832,9 @@ def show_plots():
         doc_name = doc.id
         if uid in doc_name:
             user_plants.append(doc.get().to_dict())
+
     return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list)
+
 
 @app.route('/plots', methods=['POST'])
 def save_plots():
@@ -665,6 +865,53 @@ def save_plots():
 
 
 
+    print(plot_name, crop, sw_lat, sw_long, ne_lat, ne_long)
+
+    return jsonify({'message': 'Plot saved successfully'}), 201
+
+@app.route('/statistics')
+def statistics():
+    return render_template('statistics.html')
+
+@app.route('/api/get_statistics_data', methods=['GET', 'POST'])
+def get_irrigations():
+    uid = session.get('currentUser', {}).get('uid')
+    data = {
+        'irrigations' : {},
+        'fertilizers' : {},
+        'harvests' : {}
+    }
+    
+    docs = db.collection('users').document(uid).collection('schedule').stream()
+    for doc in docs:
+        event = doc.to_dict()
+        plant = event.get('plant')
+        if event.get('type') == 'Irrigate':
+            if plant in data['irrigations'].keys():
+                data['irrigations'][plant].append(event)
+            else:
+                data['irrigations'][plant] = [event]
+        elif event.get('type') == 'Fertilize':
+            if plant in data['fertilizers'].keys():
+                data['fertilizers'][plant].append(event)
+            else:
+                data['fertilizers'][plant] = [event]
+        elif event.get('type') == 'Harvest':
+            if plant in data['harvests'].keys():
+                data['harvests'][plant].append(event)
+            else:
+                data['harvests'][plant] = [event]
+
+    docs = db.collection('users').document(uid).collection('plots').stream()
+    plots = {doc.to_dict()['name']: doc.to_dict() for doc in docs}
+    
+    result = {
+        'schedule' : data,
+        'plots' : plots
+    }
+
+
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(debug=True)
