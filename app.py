@@ -645,17 +645,6 @@ def diagnosis():
         return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
     return render_template('diagnosis.html')
 
-
-@app.route('/plots', methods=["GET"])
-def show_plots():
-    uid = session['currentUser']['uid']
-    user = db.collection("users").document(uid).get().to_dict()
-    plots = db.collection("users").document(uid).collection("plots").list_documents()
-    plot_list = []
-    for plot in plots:
-        plot_data = plot.get().to_dict()
-        plot_list.append(plot_data)
-
 @app.route('/calendar')
 def calendar():
     return render_template('calendar.html')
@@ -833,6 +822,10 @@ def show_plots():
         if uid in doc_name:
             user_plants.append(doc.get().to_dict())
 
+    plot_list = []
+    for doc in db.collection("users").document(session['currentUser']['uid']).collection("plots").list_documents():
+        plot_list.append(doc.get().to_dict())
+
     return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list)
 
 
@@ -862,12 +855,6 @@ def save_plots():
         return jsonify({ 'message': 'Plot saved' })
     else:
         return redirect(url_for('show_plots'))
-
-
-
-    print(plot_name, crop, sw_lat, sw_long, ne_lat, ne_long)
-
-    return jsonify({'message': 'Plot saved successfully'}), 201
 
 @app.route('/statistics')
 def statistics():
