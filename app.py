@@ -663,7 +663,7 @@ def get_schedule():
     schedule = [doc.to_dict() for doc in docs]
 
     docs = db.collection('users').document(uid).collection('plots').stream()
-    plots = {doc.to_dict()['name']: doc.to_dict() for doc in docs}
+    plots = {doc.to_dict()['plot_name']: doc.to_dict() for doc in docs}
     
     result = {
         'schedule' : schedule,
@@ -730,14 +730,14 @@ def clear_schedule():
 @app.route('/api/AI_schedule', methods=['GET', 'POST'])
 def AI_schedule():
     uid = session['currentUser']['uid']
-    collection_ref = db.collection('plant_data')
-    documents = collection_ref.list_documents()
-    matching_docs = []
-    for doc in documents:
-        doc_name = doc.id
-        if uid in doc_name:
-            matching_docs.append(doc.get().to_dict())
-
+    plots = {}
+    plot_data = db.collection('users').document(uid).collection('plots').stream()
+    for doc in plot_data:
+        plot = doc.to_dict()
+        plots[plot['plot_name']] = {
+            'plants': plot['crop'],
+            'idealValues': plot['idealValues']
+        }
     api_id = f"{date.today()}-{uid}"
 
     stormglass_doc = db.collection('stormglass_data').document(api_id).get()
@@ -768,8 +768,7 @@ def AI_schedule():
     Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
     - date (YYYY-MM-DD)
     - type (e.g., Irrigate, Harvest)
-    - plot (the plot involved)
-    - notes (short description of the task)
+    - plot (name of the plot involved)
 
     Additionally, include:
     - inches (number of inches of water) — only for Irrigate events
@@ -783,37 +782,17 @@ def AI_schedule():
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": instructions},
-            {"role": "user", "content": f"Plants: {matching_docs}, Address: {session['currentUser']['address']}, Conditions: {json.dumps(conditions)}, Current Date: {date.today()}"}
+            {"role": "user", "content": f"Plots: {plots}, Address: {session['currentUser']['address']}, Conditions: {json.dumps(conditions)}, Current Date: {date.today()}"}
         ],
         response_format={ "type": "json_object" }
     )
 
-    raw = dict(completion.choices[0].message)['content']
-
-    # Corrected regex to extract JSON array or object from inside triple backticks
-    match = re.search(r'```(?:json)?\s*(\{.*?\}|$begin:math:display$.*?$end:math:display$)\s*```', raw, re.DOTALL)
-
-    if match:
-        response = match.group(1)
-    else:
-        response = raw.strip()
-
-    print("Extracted response:\n", response)
-
-    # Parse the model's response to JSON
-    try:
-        events = json.loads(response)
-        print("Successfully parsed events.")
-    except json.JSONDecodeError as e:
-        print("Invalid JSON from model:", e)
-        print("Raw response was:\n", repr(response))
-        events = {}
+    response = dict(completion.choices[0].message)['content']
 
     # Reference user schedule in Firestore
-    uid = session['currentUser']['uid']
     user_schedule_ref = db.collection('users').document(uid).collection('schedule')
 
-    schedule = events.get("schedule", [])
+    schedule = json.loads(response)['schedule']
 
     # Store each event
     for event in schedule:
@@ -875,10 +854,10 @@ def show_plots():
 def save_plots():
     plot_name = request.form.get("field-name")
     crop = request.form.get("crop-type")
-    sw_lat = request.form.get("sw_lat")
-    sw_long = request.form.get("sw_long")
-    ne_lat = request.form.get('ne_lat')
-    ne_long = request.form.get("ne_long")
+    sw_lat = float(request.form.get("sw_lat"))
+    sw_long = float(request.form.get("sw_long"))
+    ne_lat = float(request.form.get('ne_lat'))
+    ne_long = float(request.form.get("ne_long"))
 
     #plants = db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).get().to_dict()['plants']
 
@@ -888,9 +867,9 @@ def save_plots():
     pounds/acre of fertilizer, and NPK ratio the overall plot needs on average each irrigation/fertilization. 
     Ensure the ideal values are based on each plant's needs.
     Return a JSON object with fields:
-    - idealIrrigation (number of inches of water)
-    - idealFertilizer (number of pounds of fertilizer)
-    - idealNPK (NPK ratio formatted as 'XX-XX-XX')
+    - idealIrrigationPerWeek (number of inches of water)
+    - idealFertilizerPerWeek (number of pounds/acre of fertilizer)
+    - idealNPKPerWeek (NPK ratio formatted as 'XX-XX-XX')
     """
     completion = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -911,7 +890,7 @@ def save_plots():
         'ne_lat': ne_lat,
         'ne_long': ne_long,
         'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long),
-        'idealValues': raw
+        'idealValues': json.loads(raw)
     }
     
     db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)
@@ -937,25 +916,25 @@ def get_irrigations():
     docs = db.collection('users').document(uid).collection('schedule').stream()
     for doc in docs:
         event = doc.to_dict()
-        plant = event.get('plant')
+        plot = event.get('plot')
         if event.get('type') == 'Irrigate':
-            if plant in data['irrigations'].keys():
-                data['irrigations'][plant].append(event)
+            if plot in data['irrigations'].keys():
+                data['irrigations'][plot].append(event)
             else:
-                data['irrigations'][plant] = [event]
+                data['irrigations'][plot] = [event]
         elif event.get('type') == 'Fertilize':
-            if plant in data['fertilizers'].keys():
-                data['fertilizers'][plant].append(event)
+            if plot in data['fertilizers'].keys():
+                data['fertilizers'][plot].append(event)
             else:
-                data['fertilizers'][plant] = [event]
+                data['fertilizers'][plot] = [event]
         elif event.get('type') == 'Harvest':
-            if plant in data['harvests'].keys():
-                data['harvests'][plant].append(event)
+            if plot in data['harvests'].keys():
+                data['harvests'][plot].append(event)
             else:
-                data['harvests'][plant] = [event]
+                data['harvests'][plot] = [event]
 
     docs = db.collection('users').document(uid).collection('plots').stream()
-    plots = {doc.to_dict()['name']: doc.to_dict() for doc in docs}
+    plots = {doc.to_dict()['plot_name']: doc.to_dict() for doc in docs}
     
     result = {
         'schedule' : data,

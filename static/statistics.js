@@ -1,6 +1,11 @@
 function calculateYieldGrowth(start, end) {
     const totalStart = start.reduce((a, b) => a + b, 0);
     const totalEnd = end.reduce((a, b) => a + b, 0);
+
+    if (totalStart === 0) {
+      return 0.0;
+    }
+
     return (((totalEnd - totalStart) / totalStart) * 100).toFixed(1);
   }
 
@@ -35,6 +40,12 @@ function calculateYieldGrowth(start, end) {
     "#7B1FA2"  // darker of 9C27B0
   ];
 
+  // Add this function to detect dark mode
+  function isDarkMode() {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  // Modify the centerTextPlugin
   const centerTextPlugin = {
       id: 'centerText',
       beforeDraw(chart, args, options) {
@@ -48,7 +59,7 @@ function calculateYieldGrowth(start, end) {
           ctx.fontWeight = 'bold';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          //ctx.fillStyle = options.color || '#000';
+          ctx.fillStyle = isDarkMode() ? '#FFFFFF' : '#000000';
 
           ctx.fillText(options.text, width / 2, height / 2);
           ctx.save();
@@ -61,9 +72,9 @@ function calculateYieldGrowth(start, end) {
   let globalPlots;
   let plantData = {
     name: "Default",
-    idealIrrigation: 0,
-    idealFertilizer: 0,
-    idealNPK: "0-0-0",
+    idealIrrigationPerWeek: 0,
+    idealFertilizerPerWeek: 0,
+    idealNPKPerWeek: "0-0-0",
     idealYieldGrowth: 0
   };
 
@@ -95,7 +106,9 @@ function calculateYieldGrowth(start, end) {
           labels: irrigationLabels,
           datasets: [{
             data: irrigationValues,
-            backgroundColor: irrigationLabels.map(plant => colorBank[plant] || '#AAAAAA')
+            backgroundColor: irrigationLabels.map(plant => colorBank[plant] || '#AAAAAA'),
+            borderColor: 'transparent',
+            borderWidth: 1
           }]
       },
       options: {
@@ -136,7 +149,9 @@ function calculateYieldGrowth(start, end) {
           labels: fertilizerLabels,
           datasets: [{
             data: fertilizerValues,
-            backgroundColor: fertilizerLabels.map(plant => colorBank[plant] || '#AAAAAA')
+            backgroundColor: fertilizerLabels.map(plant => colorBank[plant] || '#AAAAAA'),
+            borderColor: 'transparent',
+            borderWidth: 1
           }]
       },
       options: {
@@ -270,6 +285,12 @@ function calculateYieldGrowth(start, end) {
             plantData = globalPlots[selectedPlant];
             updatePlantCharts(globalScheduleData);
         }
+    });
+
+    // Add event listener for theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+        if (irrigationDonut) irrigationDonut.update();
+        if (fertilizerDonut) fertilizerDonut.update();
     });
   });
 
@@ -405,150 +426,145 @@ function calculateYieldGrowth(start, end) {
   function initializeComparisonCharts() {
       // Irrigation Comparison Chart
       if (!irrigationComparisonChart) {
-        const irrigationCtx = document.getElementById('irrigationComparison').getContext('2d');
-        irrigationComparisonChart = new Chart(irrigationCtx, {
-            type: 'bar',
-            data: {
-              labels: ['Ideal', 'Average'],
-              datasets: [
-                {
-                  label: plantData.plot_name,
-                  data: [plantData.idealValues.idealIrrigation, averageIrrigationInches],
-                  backgroundColor: [
-                    colorBank[plantData.plot_name + "Light"],
-                    colorBank[plantData.plot_name + "Dark"]
+          const irrigationCtx = document.getElementById('irrigationComparison').getContext('2d');
+          irrigationComparisonChart = new Chart(irrigationCtx, {
+              type: 'bar',
+              data: {
+                  labels: ['Ideal', 'Average'],
+                  datasets: [
+                      {
+                          label: plantData.plot_name || 'Default',
+                          data: [0, 0],
+                          backgroundColor: [
+                              colorBank["Default" + "Light"] || '#CCCCCC',
+                              colorBank["Default" + "Dark"] || '#999999'
+                          ]
+                      }
                   ]
-                }
-              ]
-            },
-            options: {
-                responsive: true,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: 'Water (in)'
-                        }
-                    }
-                },
-                plugins: {
-                  legend: {
-                    display: false
+              },
+              options: {
+                  responsive: true,
+                  scales: {
+                      y: {
+                          beginAtZero: true,
+                          title: {
+                              display: true,
+                              text: 'Water (in)'
+                          }
+                      }
+                  },
+                  plugins: {
+                      legend: {
+                          display: false
+                      }
                   }
-                }
-            }
-        });
-      } else {
-        irrigationComparisonChart.data.datasets[0].data = [plantData.idealValues.idealIrrigation];
-        irrigationComparisonChart.data.datasets[1].data = [averageIrrigationInches];
-        irrigationComparisonChart.update();
+              }
+          });
       }
 
       // Combined Fertilizer and NPK Chart
       if (!fertilizerComparisonChart) {
-      const fertilizerCtx = document.getElementById('fertilizerComparison').getContext('2d');
-      fertilizerComparisonChart = new Chart(fertilizerCtx, {
-          type: 'bar',
-          data: {
-              labels: ['Ideal', 'Actual'],
-              datasets: [
-                  {
-                      label: 'Nitrogen (N)',
-                      data: [0, 0],
-                      backgroundColor: colorBank[plantData.plot_name + "Light"],
-                      stack: 'Stack 0'
+          const fertilizerCtx = document.getElementById('fertilizerComparison').getContext('2d');
+          fertilizerComparisonChart = new Chart(fertilizerCtx, {
+              type: 'bar',
+              data: {
+                  labels: ['Ideal', 'Actual'],
+                  datasets: [
+                      {
+                          label: 'Nitrogen (N)',
+                          data: [0, 0],
+                          backgroundColor: colorBank["Default" + "Light"] || '#CCCCCC',
+                          stack: 'Stack 0'
+                      },
+                      {
+                          label: 'Phosphorus (P)',
+                          data: [0, 0],
+                          backgroundColor: colorBank["Default"] || '#AAAAAA',
+                          stack: 'Stack 0'
+                      },
+                      {
+                          label: 'Potassium (K)',
+                          data: [0, 0],
+                          backgroundColor: colorBank["Default" + "Dark"] || '#999999',
+                          stack: 'Stack 0'
+                      }
+                  ]
+              },
+              options: {
+                  responsive: true,
+                  scales: {
+                      x: {
+                          stacked: true
+                      },
+                      y: {
+                          stacked: true,
+                          beginAtZero: true,
+                          title: {
+                              display: true,
+                              text: 'Fertilizer (lbs)'
+                          }
+                      }
                   },
-                  {
-                      label: 'Phosphorus (P)',
-                      data: [0, 0],
-                      backgroundColor: colorBank[plantData.plot_name],
-                      stack: 'Stack 0'
-                  },
-                  {
-                      label: 'Potassium (K)',
-                      data: [0, 0],
-                      backgroundColor: colorBank[plantData.plot_name + "Dark"],
-                      stack: 'Stack 0'
-                  }
-              ]
-          },
-          options: {
-              responsive: true,
-              scales: {
-                  x: {
-                      stacked: true
-                  },
-                  y: {
-                      stacked: true,
-                      beginAtZero: true,
-                      title: {
+                  plugins: {
+                      legend: {
                           display: true,
-                          text: 'Fertilizer (lbs)'
+                          position: 'left',
+                          labels: {
+                              usePointStyle: true,
+                              pointStyle: 'rect',
+                              boxWidth: 15,
+                              boxHeight: 15,
+                              padding: 15
+                          }
+                      },
+                      title: {
+                          display: false,
                       }
                   }
-              },
-              plugins: {
-                  legend: {
-                      display: true,
-                      position: 'left'
-                  },
-                  title: {
-                      display: false,
-                  }
               }
-          }
-      });
-      } else {
-        fertilizerComparisonChart.data.datasets[0].data = [plantData.idealValues.idealFertilizer];
-        fertilizerComparisonChart.data.datasets[1].data = [averageFertilizerLbs];
-        fertilizerComparisonChart.update();
+          });
       }
 
       // Harvest Growth Chart
       if (!harvestGrowthChart) {
-      const harvestCtx = document.getElementById('harvestGrowth').getContext('2d');
-      harvestGrowthChart = new Chart(harvestCtx, {
-          type: 'line',
-          data: {
-              labels: [],
-              datasets: [{
-                  label: 'Harvest Yield',
-                  data: [],
-                  borderColor: colorBank[plantData.plot_name + "Dark"],
-                  backgroundColor: colorBank[plantData.plot_name + "Light"],
-                  fill: true,
-                  tension: 0.4
-              }]
-          },
-          options: {
-              responsive: true,
-              scales: {
-                  y: {
-                      beginAtZero: true,
-                      title: {
-                          display: true,
-                          text: 'Yield (lbs)'
+          const harvestCtx = document.getElementById('harvestGrowth').getContext('2d');
+          harvestGrowthChart = new Chart(harvestCtx, {
+              type: 'line',
+              data: {
+                  labels: [],
+                  datasets: [{
+                      label: 'Harvest Yield',
+                      data: [],
+                      borderColor: colorBank["Default" + "Dark"] || '#999999',
+                      backgroundColor: colorBank["Default" + "Light"] || '#CCCCCC',
+                      fill: true,
+                      tension: 0.4
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  scales: {
+                      y: {
+                          beginAtZero: true,
+                          title: {
+                              display: true,
+                              text: 'Yield (lbs)'
+                          }
+                      },
+                      x: {
+                          title: {
+                              display: true,
+                              text: 'Date'
+                          }
                       }
                   },
-                  x: {
-                      title: {
-                          display: true,
-                          text: 'Date'
+                  plugins: {
+                      legend: {
+                          display: false
                       }
                   }
-              },
-              plugins: {
-                  legend: {
-                      display: false
-                  }
               }
-          }
-      });
-      } else {
-        harvestGrowthChart.data.labels = plantData.harvests.map(h => h.date);
-        harvestGrowthChart.data.datasets[0].data = plantData.harvests.map(h => parseFloat(h.yield));
-        harvestGrowthChart.update();
+          });
       }
   }
 
@@ -557,9 +573,9 @@ function calculateYieldGrowth(start, end) {
       return Math.max(0, 100 - (Math.abs(actual - ideal) / ideal) * 100);
   }
 
-  function calculateNPKEfficiency(actualNPK, idealNPK) {
+  function calculateNPKEfficiency(actualNPK, idealNPKPerWeek) {
       const actual = parseNPK(actualNPK);
-      const ideal = parseNPK(idealNPK);
+      const ideal = parseNPK(idealNPKPerWeek);
       
       // Calculate efficiency for each component
       const nEfficiency = calculateEfficiency(actual[0], ideal[0]);
@@ -592,6 +608,18 @@ function calculateYieldGrowth(start, end) {
   // Function to update charts with plant-specific data
   function updatePlantCharts(scheduleData) {
       const plant = plantData.plot_name;
+      const selectedRange = document.getElementById('time-range').value;
+
+      let multiplier = 1;
+      if (selectedRange === 'week') {
+        multiplier = 1;
+      } else if (selectedRange === 'month') {
+        multiplier = 4;
+      } else if (selectedRange === '3months') {
+        multiplier = 12;
+      } else if (selectedRange === 'year') {
+        multiplier = 52;
+      }
       
       // Calculate average irrigation from schedule
       averageIrrigationInches = 0;
@@ -621,9 +649,10 @@ function calculateYieldGrowth(start, end) {
       }
 
       // Calculate efficiencies
-      const irrigationEfficiency = calculateEfficiency(averageIrrigationInches, plantData.idealValues.idealIrrigation);
-      const fertilizerAmountEfficiency = calculateEfficiency(averageFertilizerLbs, plantData.idealValues.idealFertilizer);
-      const npkEfficiency = calculateNPKEfficiency(averageNPK, plantData.idealValues.idealNPK);
+      const irrigationEfficiency = calculateEfficiency(averageIrrigationInches, plantData.idealValues.idealIrrigationPerWeek * multiplier);
+      const fertilizerAmountEfficiency = calculateEfficiency(averageFertilizerLbs, plantData.idealValues.idealFertilizerPerWeek * multiplier);
+      console.log(averageNPK, plantData.idealValues.idealNPKPerWeek);
+      const npkEfficiency = calculateNPKEfficiency(averageNPK, plantData.idealValues.idealNPKPerWeek);
       const fertilizerEfficiency = (fertilizerAmountEfficiency * 0.5) + (npkEfficiency * 0.5);
 
       // Update efficiency displays
@@ -631,22 +660,22 @@ function calculateYieldGrowth(start, end) {
       updateProgressCircle('fertilizer-efficiency', 'fertilizer-progress', fertilizerEfficiency);
 
       // Update Irrigation Comparison
-      irrigationComparisonChart.data.datasets[0].data = [plantData.idealValues.idealIrrigation, averageIrrigationInches];
+      irrigationComparisonChart.data.datasets[0].data = [plantData.idealValues.idealIrrigationPerWeek * multiplier, averageIrrigationInches];
       irrigationComparisonChart.data.datasets[0].backgroundColor = [colorBank[plantData.plot_name + "Light"], colorBank[plantData.plot_name + "Dark"]];
       irrigationComparisonChart.update();
 
       // Update Combined Fertilizer and NPK Comparison
-      const idealNPK = parseNPK(plantData.idealValues.idealNPK);
+      const idealNPKPerWeek = parseNPK(plantData.idealValues.idealNPKPerWeek);
       const actualNPK = parseNPK(averageNPK);
       
       // Calculate the portion of fertilizer for each nutrient
-      const idealTotal = idealNPK.reduce((a, b) => a + b, 0);
+      const idealTotal = idealNPKPerWeek.reduce((a, b) => a + b, 0);
       const actualTotal = actualNPK.reduce((a, b) => a + b, 0);
       
       // Calculate pounds of each nutrient based on ratios
-      const idealN = (idealNPK[0] / idealTotal) * plantData.idealValues.idealFertilizer;
-      const idealP = (idealNPK[1] / idealTotal) * plantData.idealValues.idealFertilizer;
-      const idealK = (idealNPK[2] / idealTotal) * plantData.idealValues.idealFertilizer;
+      const idealN = (idealNPKPerWeek[0] / idealTotal) * plantData.idealValues.idealFertilizerPerWeek * multiplier;
+      const idealP = (idealNPKPerWeek[1] / idealTotal) * plantData.idealValues.idealFertilizerPerWeek * multiplier;
+      const idealK = (idealNPKPerWeek[2] / idealTotal) * plantData.idealValues.idealFertilizerPerWeek * multiplier;
       
       const actualN = (actualNPK[0] / actualTotal) * averageFertilizerLbs;
       const actualP = (actualNPK[1] / actualTotal) * averageFertilizerLbs;
@@ -689,7 +718,7 @@ function calculateYieldGrowth(start, end) {
           harvestGrowthChart.update();
           
           // Clear growth rate display
-          document.getElementById('growth-rate').textContent = 'No Data';
+          document.getElementById('growth-rate').textContent = '0.0%';
           document.getElementById('growth-rate').style.color = '#666';
           // Reset progress circle
           const circle = document.querySelector('#growth-progress circle');
@@ -802,6 +831,7 @@ function filterDataByTimeRange(data, timeRange) {
 document.getElementById('time-range').addEventListener('change', function() {
     const selectedRange = this.value;
     const filteredData = filterDataByTimeRange(globalScheduleData, selectedRange);
+    
     renderOverallStats(filteredData);
     updatePlantCharts(filteredData);
 });
