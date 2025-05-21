@@ -841,7 +841,8 @@ def show_plots():
 @app.route('/plots', methods=['POST'])
 def save_plots():
     plot_name = request.form.get("field-name")
-    crop = request.form.get("crop-type")
+    crop = request.form.getlist("crop-type")
+    print(crop)
     sw_lat = request.form.get("sw_lat")
     sw_long = request.form.get("sw_long")
     ne_lat = request.form.get('ne_lat')
