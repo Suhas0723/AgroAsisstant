@@ -25,29 +25,51 @@
       width: 75%;
       border-radius: 12px;
     }
-
+    /* ACCORDION BUTTON */
     .accordion {
-      background-color: #eee;
-      color: #444;
+      background-color: var(--color-white);
+      color: var(--color-primary);
+      border: 1px solid var(--color-primary);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      position: relative;
       cursor: pointer;
-      padding: 18px;
-      width: 100%;
-      text-align: left;
-      border: none;
-      outline: none;
-      transition: background-color 0.2s;
+      transition: background 0.3s ease, color 0.3s ease;
+      font-weight: bold;
     }
-    .accordion:hover,
+    .accordion::after {
+      content: "\25B6"; /* ▶ */
+      font-size: 1rem;
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%) rotate(0deg);
+      transition: transform 0.3s ease;
+    }
     .accordion.active {
-      background-color: #ccc;
+      background-color: var(--color-primary);
+      color: var(--color-white);
+    }
+    .accordion.active::after {
+      transform: translateY(-50%) rotate(90deg); /* ▶ → ▼ */
     }
 
     .panel {
-      padding: 0 18px;
-      background-color: white;
-      display: none;
+      max-height: 0;
       overflow: hidden;
+      background-color: var(--color-background);
+      border-radius: 0 0 0.5rem 0.5rem;
+      transition: max-height 0.4s ease;
+      /* static padding so scrollHeight is accurate */
+      padding: 0 1rem;
     }
+    .panel.open {
+      /* padding appears immediately when open */
+      padding: 0.75rem 1rem;
+    }
+
+
   </style>
 
   <script
@@ -97,26 +119,16 @@
             border-radius: 6px;
             border: 1px solid #ccc;
           "
-        />
+          required
+        /><br>
         <label for="crop-type"><b>Crop Type</b></label>
-        <select
-          id="crop-type"
-          name="crop-type"
-          style="
-            padding: 0.6rem;
-            border-radius: 6px;
-            border: 1px solid #ccc;
-          "
-        >
-          <option value="" disabled selected>Select a crop</option>
-          {% for plant in user_plants %}
-            <option
-              value="{{ plant['common_name'] }} ({{ plant['scientific_name'] }})"
-            >
-              {{ plant['common_name'] }} ({{ plant['scientific_name'] }})
-            </option>
-          {% endfor %}
-        </select>
+        <br>
+        {% for plant in user_plants %}
+          <input type="checkbox" name="crop-type" value="{{ plant.scientific_name }}" />
+          <label for="crop-type">{{ plant.common_name }} ( {{plant.scientific_name}} )</label>
+          <br>
+        {% endfor %}
+
       </form>
       <div style="display: flex; justify-content: flex-end; gap: 1rem">
         <button
@@ -233,12 +245,47 @@
               {{ plot.plot_name }}
             </button>
             <div class="panel">
-              <p><b>Crop Type:</b> {{ plot.crop_type }}</p>
-              <p><b>Coordinates:</b></p>
-              <p>Southwest: {{ plot.sw_lat }}, {{ plot.sw_long }}</p>
-              <p>Northeast: {{ plot.ne_lat }}, {{ plot.ne_long }}</p>
+              <p><b>Crop Type:</b></p>
+              <ul>
+                {% for crop in plot.crop %}
+                  <li>{{crop}}</li>
+                {% endfor %}
+              </ul>
+            <button type="button" class="delete-plot-btn" data-plot-name="{{ plot.plot_name }}" style="padding: 8px 14px; background: var(--color-danger); color: white; border: none; border-radius: 6px; cursor: pointer;">
+              Delete
+            </button>
             </div>
           {% endfor %}
+
+          <script>
+            document.querySelectorAll('.delete-plot-btn').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const name = btn.dataset.plotName;
+                if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+
+                try {
+                  const res = await fetch('/api/delete_plot', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ plot_name: name })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    alert(data.message || 'Plot deleted');
+                    window.location.reload();
+                  } else {
+                    throw new Error(data.message || res.statusText);
+                  }
+                } catch (err) {
+                  console.error(err);
+                  alert('Failed to delete plot: ' + err.message);
+                }
+              });
+            });
+          </script>
 
           <button
             id="delete-rectangle"
@@ -277,17 +324,28 @@
 
   <script>
     function initAccordion() {
-      document
-        .querySelectorAll(".accordion")
-        .forEach(btn => {
-          btn.addEventListener("click", () => {
-            btn.classList.toggle("active");
-            const panel = btn.nextElementSibling;
-            panel.style.display =
-              panel.style.display === "block" ? "none" : "block";
-          });
+      document.querySelectorAll(".accordion").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const panel = btn.nextElementSibling;
+          btn.classList.toggle("active");
+          panel.classList.toggle("open");
+
+          if (panel.classList.contains("open")) {
+            panel.style.maxHeight = panel.scrollHeight + "px";
+            panel.addEventListener("transitionend", function handler() {
+              panel.style.maxHeight = "none";
+              panel.removeEventListener("transitionend", handler);
+            });
+          } else {
+            panel.style.maxHeight = panel.scrollHeight + "px";
+            panel.offsetHeight;
+            panel.style.maxHeight = "0";
+          }
         });
+      });
     }
+
+
 
     function initMap() {
       let currentRectangle = null;
@@ -413,6 +471,7 @@
 
           const form = document.getElementById("plot-form");
           const data = new FormData(form);
+          console.log(data)
           data.append("sw_lat", currentCoords.southwest[0]);
           data.append("sw_long", currentCoords.southwest[1]);
           data.append("ne_lat", currentCoords.northeast[0]);
@@ -424,11 +483,10 @@
             body: data
           })
             .then(res => {
-              if (!res.ok) throw new Error(res.status);
+              if (!res.ok) throw new Error(res.status);a
               return res.json();
             })
             .then(json => {
-              alert(json.message);
               document.getElementById("save-modal").style.display = "none";
             })
             .catch(err => {

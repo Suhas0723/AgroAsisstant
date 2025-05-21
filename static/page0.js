@@ -165,7 +165,7 @@ loginBtn.addEventListener('click', () => {
             })
             .then((data) => {
               console.log('Login data sent to Flask backend:', data);
-              location.href = "/"; 
+              location.href = "/dashboard"; 
             })
             .catch((error) => {
               console.error('Error logging in on the backend:', error.message);

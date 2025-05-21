@@ -213,8 +213,12 @@ def api_to_db(uid):
     if not weatherapi_doc.exists:
         weather_data = get_weatherapi_averages()  
         db.collection("weatherapi_data").document(doc_id+"-"+uid).set(weather_data)
-
+        
 @app.route('/')
+def home():
+    return render_template('landing_page.html')
+
+@app.route('/dashboard')
 def index():
     if "currentUser" in session:
         username = session["currentUser"]['name']
@@ -805,10 +809,10 @@ def calculate_acres(ne_lat, ne_long, sw_lat, sw_long):
     R = 6371000
     
     # Convert coordinates to radians
-    ne_lat_rad = radians(ne_lat)
-    ne_long_rad = radians(ne_long)
-    sw_lat_rad = radians(sw_lat)
-    sw_long_rad = radians(sw_long)
+    ne_lat_rad = radians(float(ne_lat))
+    ne_long_rad = radians(float(ne_long))
+    sw_lat_rad = radians(float(sw_lat))
+    sw_long_rad = radians(float(sw_long))
     
     # Calculate the distance between points
     dlat = ne_lat_rad - sw_lat_rad
@@ -853,13 +857,12 @@ def show_plots():
 @app.route('/plots', methods=['POST'])
 def save_plots():
     plot_name = request.form.get("field-name")
-    crop = request.form.get("crop-type")
-    sw_lat = float(request.form.get("sw_lat"))
-    sw_long = float(request.form.get("sw_long"))
-    ne_lat = float(request.form.get('ne_lat'))
-    ne_long = float(request.form.get("ne_long"))
+    crop = request.form.getlist("crop-type")
+    sw_lat = request.form.get("sw_lat")
+    sw_long = request.form.get("sw_long")
+    ne_lat = request.form.get('ne_lat')
+    ne_long = request.form.get("ne_long")
 
-    #plants = db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).get().to_dict()['plants']
 
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
     instructions = """
@@ -899,6 +902,13 @@ def save_plots():
         return jsonify({ 'message': 'Plot saved' })
     else:
         return redirect(url_for('show_plots'))
+    
+@app.route('/api/delete_plot', methods=['POST'])
+def delete_plot():
+    plot_name = request.json.get("plot_name")
+    uid = session['currentUser']['uid']
+    db.collection("users").document(uid).collection("plots").document(plot_name).delete()
+    return jsonify({ 'message': 'Plot deleted' })
 
 @app.route('/statistics')
 def statistics():
