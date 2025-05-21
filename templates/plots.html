@@ -119,6 +119,7 @@
             border-radius: 6px;
             border: 1px solid #ccc;
           "
+          required
         /><br>
         <label for="crop-type"><b>Crop Type</b></label>
         <br>
@@ -250,8 +251,41 @@
                   <li>{{crop}}</li>
                 {% endfor %}
               </ul>
+            <button type="button" class="delete-plot-btn" data-plot-name="{{ plot.plot_name }}" style="padding: 8px 14px; background: var(--color-danger); color: white; border: none; border-radius: 6px; cursor: pointer;">
+              Delete
+            </button>
             </div>
           {% endfor %}
+
+          <script>
+            document.querySelectorAll('.delete-plot-btn').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                const name = btn.dataset.plotName;
+                if (!confirm(`Are you sure you want to delete "${name}"?`)) return;
+
+                try {
+                  const res = await fetch('/api/delete_plot', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ plot_name: name })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    alert(data.message || 'Plot deleted');
+                    window.location.reload();
+                  } else {
+                    throw new Error(data.message || res.statusText);
+                  }
+                } catch (err) {
+                  console.error(err);
+                  alert('Failed to delete plot: ' + err.message);
+                }
+              });
+            });
+          </script>
 
           <button
             id="delete-rectangle"
@@ -289,7 +323,6 @@
   </div>
 
   <script>
-    // Replace your initAccordion() with this:
     function initAccordion() {
       document.querySelectorAll(".accordion").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -298,16 +331,13 @@
           panel.classList.toggle("open");
 
           if (panel.classList.contains("open")) {
-            // set to its content height, then drop the cap so it can grow
             panel.style.maxHeight = panel.scrollHeight + "px";
             panel.addEventListener("transitionend", function handler() {
               panel.style.maxHeight = "none";
               panel.removeEventListener("transitionend", handler);
             });
           } else {
-            // force the maxHeight back to its current height before collapsing
             panel.style.maxHeight = panel.scrollHeight + "px";
-            // trigger a reflow so the next line animates
             panel.offsetHeight;
             panel.style.maxHeight = "0";
           }
@@ -457,7 +487,6 @@
               return res.json();
             })
             .then(json => {
-              alert(json.message);
               document.getElementById("save-modal").style.display = "none";
             })
             .catch(err => {
