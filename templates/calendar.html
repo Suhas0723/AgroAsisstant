@@ -255,14 +255,14 @@
             const schedule = data.schedule;
             const plots = data.plots;
         
-            data.forEach(event => {
+            schedule.forEach(event => {
             $("#calendar").evoCalendar('addCalendarEvent', [
                     {
                         id: Math.random().toString(36).substr(2, 9),
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
+                        description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });     
@@ -375,7 +375,7 @@
                         name: event.type,
                         date: event.date,
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
+                        description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });     
