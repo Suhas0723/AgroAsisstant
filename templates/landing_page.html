@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgroAssistant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --green-dark: #1b4332;
+      --green-medium: #2d6a4f;
+      --green-light: #52b788;
+      --green-accent: #95d5b2;
+      --bg: #e6f4ea;
+      --white: #ffffff;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--green-dark);
+      overflow-x: hidden;
+    }
+
+    .hero {
+      min-height: 100vh;
+      padding: 4rem 2rem;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .background-shapes::before,
+    .background-shapes::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      z-index: 0;
+      opacity: 0.15;
+    }
+
+    .background-shapes::before {
+      width: 600px;
+      height: 600px;
+      background: var(--green-light);
+      top: -150px;
+      left: -200px;
+    }
+
+    .background-shapes::after {
+      width: 500px;
+      height: 500px;
+      background: var(--green-accent);
+      bottom: -100px;
+      right: -150px;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      max-width: 800px;
+      text-align: center;
+      animation: fadeUp 1.2s ease;
+    }
+
+    h1 {
+      font-size: 3rem;
+      color: var(--green-medium);
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    p {
+      font-size: 1.2rem;
+      color: var(--green-dark);
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .btn {
+      background: linear-gradient(to right, var(--green-medium), var(--green-dark));
+      color: white;
+      padding: 0.85rem 2rem;
+      font-size: 1.05rem;
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(29, 100, 72, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(29, 100, 72, 0.4);
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+      margin-top: 4rem;
+    }
+
+    .feature {
+      background: var(--white);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+      transition: transform 0.3s ease;
+    }
+
+    .feature:hover {
+      transform: translateY(-6px);
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      color: var(--green-light);
+      margin-bottom: 1rem;
+    }
+
+    .feature h3 {
+      font-size: 1.2rem;
+      color: var(--green-medium);
+      margin-bottom: 0.5rem;
+    }
+
+    .feature p {
+      font-size: 0.95rem;
+      color: var(--green-dark);
+    }
+
+    footer {
+      margin-top: 4rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: #556b6d;
+    }
+
+    @keyframes fadeUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .smart-tools {
+      margin-top: 5rem;
+      padding: 3rem 1rem;
+      background: #ffffff;
+      border-radius: 24px;
+      max-width: 800px;
+      margin-left: auto;
+      margin-right: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      text-align: center;
+    }
+
+    .smart-tools h2 {
+      font-size: 2rem;
+      color: var(--green-medium);
+      margin-bottom: 2rem;
+      font-weight: 600;
+    }
+
+    .carousel-wrapper {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .carousel-track {
+      display: flex;
+      transition: transform 0.6s ease-in-out;
+    }
+
+    .tool-card {
+      flex: 0 0 100%;
+      padding: 2rem 5rem;
+      background: var(--bg);
+      border-radius: 16px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
+      text-align: left;
+      opacity: 0.5;
+      transform: scale(0.95);
+      transition: all 0.4s ease;
+      box-sizing: border-box;
+    }
+
+    .tool-card.active {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .tool-card h3 {
+      font-size: 1.3rem;
+      color: var(--green-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    .tool-card p {
+      font-size: 1rem;
+      color: var(--green-medium);
+      line-height: 1.5;
+    }
+
+    .carousel-btn {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--green-dark);
+      color: white;
+      border: none;
+      padding: 0.6rem 1rem;
+      font-size: 1.5rem;
+      cursor: pointer;
+      z-index: 10;
+      border-radius: 8px;
+      opacity: 0.8;
+    }
+
+    .carousel-btn:hover {
+      opacity: 1;
+    }
+
+    .carousel-btn.left {
+      left: 10px;
+    }
+
+    .carousel-btn.right {
+      right: 10px;
+    }
+
+    @media (max-width: 600px) {
+      .tool-card {
+        padding: 1.5rem 1.25rem;
+      }
+      .carousel-btn {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="background-shapes"></div>
+    <div class="content">
+      <h1>Welcome to AgroAssistant</h1>
+      <p>Empowering farmers with real-time data on crop health, weather, and soil conditions. A smarter way to grow.</p>
+           <a href="/signup"><button class="btn">Login</button></a>
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">🌱</div>
+          <h3>Crop Insights</h3>
+          <p>Use your phone’s camera to check if your crops are healthy or need attention.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🌦️</div>
+          <h3>Live Weather</h3>
+          <p>Check local weather updates so you can plan your work and protect your crops.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🌍</div>
+          <h3>Soil Monitoring</h3>
+          <p>Know when your soil is too dry, too wet, or lacking nutrients with simple tools.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="smart-tools">
+    <h2>Smart Tools at Your Fingertips</h2>
+    <div class="carousel-wrapper">
+      <button class="carousel-btn left" onclick="prevSlide()">‹</button>
+      <div class="carousel-track" id="carouselTrack">
+        <div class="tool-card active">
+          <h3>Irrigation Helper</h3>
+          <p>Know the best times to water your crops based on simple weather and soil checks.</p>
+        </div>
+        <div class="tool-card">
+          <h3>Disease Detector</h3>
+          <p>Scan your plants for signs of disease and get tips on how to treat them early.</p>
+        </div>
+        <div class="tool-card">
+          <h3>Voice Assistant</h3>
+          <p>Ask questions about your farm and get instant answers—hands-free and easy to use.</p>
+        </div>
+        <div class="tool-card">
+          <h3>Yield Forecasting</h3>
+          <p>Get simple predictions of how much crop you can expect this season based on past trends.</p>
+        </div>
+      </div>
+      <button class="carousel-btn right" onclick="nextSlide()">›</button>
+    </div>
+  </section>
+
+  <footer>© 2025 AgroAssistant · Green Tech for the Future</footer>
+
+  <script>
+    const track = document.getElementById('carouselTrack');
+    const slides = track.children;
+    let currentIndex = 0;
+
+    function updateSlide(index) {
+      for (let i = 0; i < slides.length; i++) {
+        slides[i].classList.remove('active');
+      }
+      slides[index].classList.add('active');
+      track.style.transform = `translateX(-${index * 100}%)`;
+    }
+
+    function nextSlide() {
+      currentIndex = (currentIndex + 1) % slides.length;
+      updateSlide(currentIndex);
+    }
+
+    function prevSlide() {
+      currentIndex = (currentIndex - 1 + slides.length) % slides.length;
+      updateSlide(currentIndex);
+    }
+
+    setInterval(() => {
+      nextSlide();
+    }, 5000);
+
+    window.addEventListener('load', () => updateSlide(currentIndex));
+  </script>
+</body>
+</html>
