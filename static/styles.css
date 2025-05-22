@@ -645,5 +645,28 @@ main table tbody tr:last-child td {
         color: var(--color-dark);
     }
 
-    
+
+
+
+    /* Typewriter cursor blink */
+    @keyframes blink {
+        50% {
+            border-color: transparent;
+        }
+    }
+
+    /* Base typewriter span */
+    .typewriter {
+        display: inline;
+        white-space: nowrap;
+        overflow: hidden;
+        border-right: .1em solid var(--color-dark);
+    }
+
+    /* While typing, keep the cursor animating */
+    .typewriter.typing {
+        animation: blink 0.7s step-end infinite;
+    }
+
+
 }
