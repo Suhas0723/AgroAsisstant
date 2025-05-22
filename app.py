@@ -689,7 +689,7 @@ def add_event():
             'date' : raw['date'],
             'type' : raw['type'],
             'plant' : raw['plant'],
-            'notes' : raw['notes'],
+            'notes' : raw.get('notes', ''),
         }
 
         if raw['type'] == 'Irrigate':
@@ -767,7 +767,7 @@ def AI_schedule():
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
     instructions = """
     Using the provided plots, crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
-    Tailor the plan to the specific crops and conditions.
+    Tailor the plan to the specific crops and conditions for each plot, with at least 10 events in total.
 
     Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
     - date (YYYY-MM-DD)
