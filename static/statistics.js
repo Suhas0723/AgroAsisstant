@@ -40,11 +40,6 @@ function calculateYieldGrowth(start, end) {
     "#7B1FA2"  // darker of 9C27B0
   ];
 
-  // Add this function to detect dark mode
-  function isDarkMode() {
-      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  }
-
   // Modify the centerTextPlugin
   const centerTextPlugin = {
       id: 'centerText',
@@ -59,13 +54,13 @@ function calculateYieldGrowth(start, end) {
           ctx.fontWeight = 'bold';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillStyle = isDarkMode() ? '#FFFFFF' : '#000000';
+          ctx.fillStyle = '#808080';
 
           ctx.fillText(options.text, width / 2, height / 2);
           ctx.save();
       }
   };
-  Chart.register(centerTextPlugin);
+  //Chart.register(centerTextPlugin);
 
   // Store schedule data globally so we can reuse it
   let globalScheduleData;
@@ -82,13 +77,13 @@ function calculateYieldGrowth(start, end) {
   let fertilizerDonut;
 
   function renderOverallStats(data) {
-    const irrigation = data.irrigations;
-    const fertilizer = data.fertilizers;
-    const harvests = data.harvests;
+        const irrigation = data.irrigations;
+        const fertilizer = data.fertilizers;
+        const harvests = data.harvests;
 
     // Donut: Total Gallons
-    const irrigationLabels = Object.keys(irrigation);
-    const irrigationValues = irrigationLabels.map(plant => {
+        const irrigationLabels = Object.keys(irrigation);
+        const irrigationValues = irrigationLabels.map(plant => {
         const total = irrigation[plant].reduce((sum, e) => {
             const inches = parseFloat(e.inches || 0);
             const acres = parseFloat(globalPlots[plant]?.acres || 0);
@@ -96,32 +91,32 @@ function calculateYieldGrowth(start, end) {
             return sum + gallons;
         }, 0);
         return total.toFixed(2);
-    });
-    const irrigationTotal = irrigationValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
+        });
+        const irrigationTotal = irrigationValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
 
     if (!irrigationDonut) {
     irrigationDonut = new Chart(document.getElementById('irrigationDonut'), {
-      type: 'doughnut',
-      data: {
-          labels: irrigationLabels,
-          datasets: [{
-            data: irrigationValues,
+          type: 'doughnut',
+          data: {
+              labels: irrigationLabels,
+              datasets: [{
+              data: irrigationValues,
             backgroundColor: irrigationLabels.map(plant => colorBank[plant] || '#AAAAAA'),
             borderColor: 'transparent',
             borderWidth: 1
-          }]
-      },
-      options: {
-          plugins: {
-          legend: { display: false },
-          centerText: {
+              }]
+          },
+          options: {
+              plugins: {
+              legend: { display: false },
+              centerText: {
               text: `${(irrigationTotal/1000).toFixed(1)}k gal`,
-              fontSize: 18,
-          }
-          }
-      },
-      plugins: [centerTextPlugin]
-      });
+                  fontSize: 18,
+              }
+              }
+          },
+          plugins: [centerTextPlugin]
+          });
     } else {
       irrigationDonut.data.labels = irrigationLabels;
       irrigationDonut.data.datasets[0].data = irrigationValues;
@@ -130,8 +125,8 @@ function calculateYieldGrowth(start, end) {
     }
 
     // Donut: Total Pounds
-    const fertilizerLabels = Object.keys(fertilizer);
-    const fertilizerValues = fertilizerLabels.map(plant => {
+        const fertilizerLabels = Object.keys(fertilizer);
+        const fertilizerValues = fertilizerLabels.map(plant => {
         const total = fertilizer[plant].reduce((sum, e) => {
             const pounds = parseFloat(e.fert || 0);
             const acres = parseFloat(globalPlots[plant]?.acres || 0);
@@ -139,32 +134,32 @@ function calculateYieldGrowth(start, end) {
             return sum + totalPounds;
         }, 0);
         return total.toFixed(2);
-    });
-    const fertilizerTotal = fertilizerValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
+        });
+        const fertilizerTotal = fertilizerValues.reduce((a, b) => parseFloat(a) + parseFloat(b), 0);
 
     if (!fertilizerDonut) {
     fertilizerDonut = new Chart(document.getElementById('fertilizerDonut'), {
-      type: 'doughnut',
-      data: {
-          labels: fertilizerLabels,
-          datasets: [{
-            data: fertilizerValues,
+          type: 'doughnut',
+          data: {
+              labels: fertilizerLabels,
+              datasets: [{
+              data: fertilizerValues,
             backgroundColor: fertilizerLabels.map(plant => colorBank[plant] || '#AAAAAA'),
             borderColor: 'transparent',
-            borderWidth: 1
-          }]
-      },
-      options: {
-          plugins: {
-          legend: { display: false },
-          centerText: {
+            borderWidth: 10
+              }]
+          },
+          options: {
+              plugins: {
+              legend: { display: false },
+              centerText: {
               text: `${(fertilizerTotal/1000).toFixed(1)}k lbs`,
-              fontSize: 18,
-          }
-          }
-      },
-      plugins: [centerTextPlugin]
-      });
+                  fontSize: 18,
+              }
+              }
+          },
+          plugins: [centerTextPlugin]
+          });
     } else {
       fertilizerDonut.data.labels = fertilizerLabels;
       fertilizerDonut.data.datasets[0].data = fertilizerValues;
@@ -177,12 +172,12 @@ function calculateYieldGrowth(start, end) {
     lineGraph(irrigation, 'inches', 'Irrigation over Time', 'Water (gal)', 'irrigationLine', true);
     //lineGraph(harvests, 'yield', 'Harvest Yield Over Time', 'Yield (lbs)', 'harvestLine')
 
-    // Line: Harvest Yield
-    const harvestLabels = Object.keys(harvests);
+        // Line: Harvest Yield
+        const harvestLabels = Object.keys(harvests);
 
-    const latest = harvestLabels.map(p => parseFloat(harvests[p].slice(-1)[0].yield || 0));
-    const previous = harvestLabels.map(p => parseFloat(harvests[p].slice(-2)[0]?.yield || 0));
-    const growth = calculateYieldGrowth(previous, latest);
+        const latest = harvestLabels.map(p => parseFloat(harvests[p].slice(-1)[0].yield || 0));
+        const previous = harvestLabels.map(p => parseFloat(harvests[p].slice(-2)[0]?.yield || 0));
+        const growth = calculateYieldGrowth(previous, latest);
     
     // Update yield growth progress circle
     const yieldGrowthElement = document.getElementById('yield-growth');
@@ -291,7 +286,7 @@ function calculateYieldGrowth(start, end) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
         if (irrigationDonut) irrigationDonut.update();
         if (fertilizerDonut) fertilizerDonut.update();
-    });
+      });
   });
 
   
@@ -347,7 +342,7 @@ function calculateYieldGrowth(start, end) {
       }
   
       if (!lineGraphs[chartName]) {
-        const ctx = document.getElementById(chartName).getContext('2d');
+      const ctx = document.getElementById(chartName).getContext('2d');
         lineGraphs[chartName] = new Chart(ctx, {
         type: 'line',
         data: {
@@ -361,7 +356,7 @@ function calculateYieldGrowth(start, end) {
                   display: false
               },
               tooltip: {
-                mode: 'index',
+              mode: 'index',
                 intersect: false,
                 callbacks: {
                     label: function(context) {
@@ -378,8 +373,8 @@ function calculateYieldGrowth(start, end) {
                 }
               },
               title: {
-                display: true,
-                text: title,
+              display: true,
+              text: title,
               }
           },
           interaction: {
@@ -834,4 +829,4 @@ document.getElementById('time-range').addEventListener('change', function() {
     
     renderOverallStats(filteredData);
     updatePlantCharts(filteredData);
-});
+  });
