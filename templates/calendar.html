@@ -73,7 +73,7 @@
         <div class="visits">
             <div class="status">
                 
-                <div id="calendar"></div>
+                <div id="calendar" class="sidebar-hide"></div>
 
                 
             </div>
@@ -112,6 +112,9 @@
                         auto_awesome
                     </span>
                     <h3>AI Schedule</h3>
+                </div>
+                <div class="loading-spinner" style="display: none;">
+                    <div class="spinner"></div>
                 </div>
             </div>
             
@@ -192,18 +195,7 @@
                     <button type="submit" class="save-btn" id="save-irr-btn">Save</button>
                 </form>
             </div>
-
-            <div class="header">
-                <h2>Upcoming events</h2>
-                <span class="material-icons-sharp">
-                    notifications_none
-                </span>
-            </div>
-
-            <div id="irrigation-cards-container"></div>
-        
-            
-                
+          
             </div>
         </div>
 
@@ -211,6 +203,7 @@
 </div>
 
   
+<script src="{{ url_for('static', filename='index.js') }}"></script>
 
 
   <!-- jQuery (required) -->
@@ -223,13 +216,13 @@
 
     function formatDesc(type, plant, inches, fert, npk, yield, notes) {
         if (type === 'Irrigate') {
-            return `Plot: ${plant}<br>Inches: ${inches}<br>${notes}`;
+            return `Plot: ${plant}<br>Inches: ${inches}` + (notes ? `<br>${notes}` : '');
         } else if (type === 'Fertilize') {
-            return `Plot: ${plant}<br>Amount (lbs): ${fert}<br>NPK: ${npk}<br>${notes}`;
+            return `Plot: ${plant}<br>Amount (lbs): ${fert}<br>NPK: ${npk}` + (notes ? `<br>${notes}` : '');
         } else if (type === 'Harvest') {
-            return `Plot: ${plant}<br>Yield (lbs): ${yield}<br>${notes}`;
+            return `Plot: ${plant}<br>Yield (lbs): ${yield}` + (notes ? `<br>${notes}` : '');
         } else {
-            return `Plot: ${plant}<br>${notes}`;
+            return `Plot: ${plant}` + (notes ? `<br>${notes}` : '');
         }
     }
 
@@ -243,24 +236,30 @@
         Other: '#d3d3d3'        // soft gray
     }
 
+    let plots;
+
     $(document).ready(function() {
+      console.log('Document ready');
       $("#calendar").evoCalendar({
         // theme: "Royal Navy",
+        
       });
+      console.log('Calendar initialized');
+      
+      console.log('Attempting to fetch schedule...');
       fetch('/api/get_schedule')
-        .then(response => response.json())
+          .then(response => response.json())
         .then(data => {
-            console.log('yoyoyo');
-            console.log(data)
+            console.log('Data received:', data);
             const schedule = data.schedule;
-            const plots = data.plots;
+            plots = data.plots;
         
             schedule.forEach(event => {
             $("#calendar").evoCalendar('addCalendarEvent', [
                     {
                         id: Math.random().toString(36).substr(2, 9),
                         name: event.type,
-                        date: event.date,
+                        date: new Date(new Date(event.date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                         color: colors[event.type],
                         description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
@@ -362,6 +361,13 @@
     });
 
     AIBtn.addEventListener('click', (e) => {
+        const button = e.currentTarget;
+        const spinner = button.querySelector('.loading-spinner');
+        
+        // Show loading state
+        button.classList.add('loading');
+        spinner.style.display = 'flex';
+        
         fetch('/api/AI_schedule')
         .then(response => response.json())
         .then(data => {
@@ -369,11 +375,11 @@
             console.log(data)
         
             data.forEach(event => {
-            $("#calendar").evoCalendar('addCalendarEvent', [
+                $("#calendar").evoCalendar('addCalendarEvent', [
                     {
                         id: Math.random().toString(36).substr(2, 9),
                         name: event.type,
-                        date: event.date,
+                        date: new Date(new Date(event.date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                         color: colors[event.type],
                         description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
@@ -382,6 +388,11 @@
         })
         .catch(error => {
             console.error('Error fetching crop data:', error);
+        })
+        .finally(() => {
+            // Hide loading state
+            button.classList.remove('loading');
+            spinner.style.display = 'none';
         });
     });
 
@@ -669,9 +680,83 @@
         line-height: 1;
     }
 
-    
+    /* Loading Spinner Styles */
+    .loading-spinner {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(56, 142, 60, 0.9);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 8px;
+        z-index: 2;
+    }
 
-    </style>
+    .spinner {
+        width: 30px;
+        height: 30px;
+        border: 3px solid var(--color-white);
+        border-top: 3px solid transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    #AI-btn {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(135deg, 
+            var(--color-primary) 0%, 
+            var(--color-success) 50%,
+            var(--color-primary) 100%);
+        background-size: 200% 200%;
+        animation: gradientMove 3s ease infinite;
+        transition: all 0.3s ease;
+    }
+
+    @keyframes gradientMove {
+        0% {
+            background-position: 0% 50%;
+        }
+        50% {
+            background-position: 100% 50%;
+        }
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+
+    #AI-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(95, 109, 65, 0.3);
+    }
+
+    #AI-btn.loading {
+        pointer-events: none;
+        opacity: 0.8;
+        animation: none;
+    }
+
+    #AI-btn .material-icons-sharp,
+    #AI-btn h3 {
+        color: var(--color-white);
+        transition: all 0.3s ease;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    #AI-btn.loading .material-icons-sharp,
+    #AI-btn.loading h3 {
+        opacity: 0.7;
+    }
+
+</style>
       
         
 </body>
