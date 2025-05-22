@@ -20,11 +20,11 @@
                 </div>
             </div>
             <div class="sidebar">
-                <a href="/">
+                <a href="/dashboard">
                     <span class="material-icons-sharp">dashboard</span>
                     <h3>Dashboard</h3>
                 </a>
-                <a href="/calendar">
+                <a href="/calendar" class="active">
                     <span class="material-icons-sharp">calendar_month</span>
                     <h3>Calendar</h3>
                 </a>
@@ -32,11 +32,15 @@
                     <span class="material-icons-sharp">yard</span>
                     <h3>Crops</h3>
                 </a>
+                <a href="/plots">
+                    <span class="material-icons-sharp">satellite</span>
+                    <h3>Plots</h3>
+                </a>
                 <a href="/statistics">
                     <span class="material-icons-sharp">bar_chart</span>
                     <h3>Statistics</h3>
                 </a>
-                <a href="/chatbot" class="active">
+                <a href="/chatbot">
                     <span class="material-icons-sharp">forum</span>
                     <h3>AgriAI</h3>
                 </a>
@@ -50,7 +54,7 @@
                     <span class="material-icons-sharp">account_circle</span>
                     <h3>Profile</h3>
                 </a>
-    
+
                 <a href="/logout">
                     <span class="material-icons-sharp">logout</span>
                     <h3>Logout</h3>
@@ -136,38 +140,75 @@
         const chatBox = document.getElementById('chat-box');
 
         function clearText() {
-            document.getElementById('chat-box').innerHTML = '';
+        chatBox.innerHTML = '';
         }
+
+        // ... keep your clearBtn, chatForm, chatBox selectors and clearText() ...
+
+        function addUserMessage(text) {
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('message', 'user');
+        wrapper.innerHTML = `<b>You:</b> ${text}`;
+        chatBox.appendChild(wrapper);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function addBotMessage(text) {
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('message', 'bot');
+        // label
+        const label = document.createElement('b');
+        label.textContent = 'AgriBot:';
+        wrapper.appendChild(label);
+        wrapper.appendChild(document.createTextNode(' '));
+
+        // typewriter span
+        const tw = document.createElement('span');
+        tw.classList.add('typewriter', 'typing');
+        wrapper.appendChild(tw);
+
+        chatBox.appendChild(wrapper);
+
+        // typing animation
+        let i = 0, speed = 30;
+        const typer = setInterval(() => {
+            tw.textContent += text.charAt(i++);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            if (i >= text.length) {
+            clearInterval(typer);
+            tw.classList.remove('typing');
+            }
+        }, speed);
+        }
+
+        // ... rest of your submit handler and clearBtn listener unchanged ...
+
+
         chatForm.addEventListener('submit', (e) => {
-            e.preventDefault();
+        e.preventDefault();
+        const inputEl = document.getElementById('question');
+        const questionText = inputEl.value.trim();
+        if (!questionText) return;
 
-            const userInput = document.getElementById('question');
-            const questionText = userInput.value.trim();
+        addUserMessage(questionText);
+        inputEl.value = '';
 
-            if (!questionText) return;
-
-            addMessage('You', questionText);
-
-            userInput.value = '';
-
-            fetch('/chatbot', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question: questionText })
+        fetch('/chatbot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: questionText })
+        })
+            .then(res => res.json())
+            .then(data => {
+            addBotMessage(data.response);
             })
-                .then(response => response.json())
-                .then(data => {
-                    addMessage('AgriBot', data.response);
-                })
-                .catch(err => console.error('Error:', err));
+            .catch(err => {
+            console.error('Error:', err);
+            addBotMessage('Sorry, something went wrong.');
+            });
         });
 
-        function addMessage(sender, text) {
-            const msg = document.createElement('div');
-            msg.innerHTML = `<b>${sender}:</b> ${text}`;
-            chatBox.appendChild(msg);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
+        clearBtn.addEventListener('click', clearText);
     </script>
 
     <style>
@@ -257,7 +298,11 @@
 
 
         .chat-box {
-            flex: 1;
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
             overflow-y: auto;
             margin-bottom: 1rem;
             padding: 1rem;
@@ -295,6 +340,34 @@
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        /* base bubble style */
+        .message {
+            max-width: 70%;
+            margin: 0.5rem;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        /* user bubble on left */
+        .message.user {
+            align-self: flex-start;
+            background-color: var(--color-light);
+            border: 1px solid #ddd;
+        }
+
+        /* bot bubble on right */
+        .message.bot {
+            align-self: flex-end;
+            background-color: var(--color-primary);
+            color: white;
+        }
+
+        .typewriter.typing {
+            border-right-color: currentColor;
         }
     </style>
     <script src="{{ url_for('static', filename='index.js') }}"></script>
