@@ -924,9 +924,15 @@ def get_irrigations():
     }
     
     docs = db.collection('users').document(uid).collection('schedule').stream()
+    
     for doc in docs:
         event = doc.to_dict()
         plot = event.get('plot')
+        
+        # Skip events that don't have a valid plot name
+        if not plot or plot is None:
+            continue
+            
         if event.get('type') == 'Irrigate':
             if plot in data['irrigations'].keys():
                 data['irrigations'][plot].append(event)
@@ -944,12 +950,14 @@ def get_irrigations():
                 data['harvests'][plot] = [event]
 
     docs = db.collection('users').document(uid).collection('plots').stream()
+    
     plots = {doc.to_dict()['plot_name']: doc.to_dict() for doc in docs}
     
     result = {
         'schedule' : data,
         'plots' : plots
     }
+    print(result)
 
 
     return jsonify(result)
