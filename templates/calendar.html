@@ -21,56 +21,7 @@
   
 
   <div class="container">
-    <aside>
-        <div class="toggle">
-            <div class="logo">
-                <img src="{{ url_for('static', filename='agroAssisstantLogo.png') }}"
-                    style="width: 25px; height: 25px">
-                <h2>Agro<span class="success">Assistant</span></h2>
-            </div>
-        </div>
-        <div class="sidebar">
-            <a href="/dashboard">
-                <span class="material-icons-sharp">dashboard</span>
-                <h3>Dashboard</h3>
-            </a>
-            <a href="/calendar" class="active">
-                <span class="material-icons-sharp">calendar_month</span>
-                <h3>Calendar</h3>
-            </a>
-            <a href="/crops/show-crops">
-                <span class="material-icons-sharp">yard</span>
-                <h3>Crops</h3>
-            </a>
-            <a href="/plots">
-                <span class="material-icons-sharp">satellite</span>
-                <h3>Plots</h3>
-            </a>
-            <a href="/statistics">
-                <span class="material-icons-sharp">bar_chart</span>
-                <h3>Statistics</h3>
-            </a>
-            <a href="/chatbot">
-                <span class="material-icons-sharp">forum</span>
-                <h3>AgriAI</h3>
-            </a>
-            <a href="/diagnosis">
-                <span class="material-icons-sharp">
-                    medical_services
-                </span>
-                <h3>Diagnosis</h3>
-            </a>
-            <a href="/profile">
-                <span class="material-icons-sharp">account_circle</span>
-                <h3>Profile</h3>
-            </a>
-
-            <a href="/logout">
-                <span class="material-icons-sharp">logout</span>
-                <h3>Logout</h3>
-            </a>
-        </div>
-    </aside>
+    {% include 'navbar.html' %}
 
     <main>
         <h1 style="padding-bottom: 20px;">Schedule</h1>
@@ -164,10 +115,7 @@
                       <label for="event-plant">Plot</label>
                       <select id="event-plant">
                         <option value="">Select Plot</option>
-                        <option value="Canada Balsam">Canada Balsam</option>
-                        <option value="Fragrant Dracaena">Fragrant Dracaena</option>
-                        <option value="Eglatine">Eglatine</option>
-                        <option value="Potato">Potato</option>
+                        
                         <!-- Options can be populated dynamically -->
                       </select>
                     </div>
@@ -240,8 +188,6 @@
         Other: '#d3d3d3'        // soft gray
     }
 
-    let plots;
-
     $(document).ready(function() {
       console.log('Document ready');
       $("#calendar").evoCalendar({
@@ -256,7 +202,7 @@
         .then(data => {
             console.log('Data received:', data);
             const schedule = data.schedule;
-            plots = data.plots;
+            const plots = data.plots;
         
             schedule.forEach(event => {
             $("#calendar").evoCalendar('addCalendarEvent', [
@@ -268,19 +214,21 @@
                         description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
-            });     
+            });   
+            
+            const plotSelect = document.getElementById('event-plant')
+            Object.values(plots).forEach(plot => {
+                const option = document.createElement('option');
+                option.value = plot.plot_name;
+                option.textContent = plot.plot_name;
+                plotSelect.appendChild(option);
+            });
         })
         .catch(error => {
             console.error('Error fetching crop data:', error);
         });
 
-        const plotSelect = document.getElementById('event-plant')
-        plots.forEach(plot => {
-            const option = document.createElement('option');
-            option.value = plot.name;
-            option.textContent = plot.name;
-            plotSelect.appendChild(option);
-        });
+        
     });
     
   </script>
