@@ -137,35 +137,30 @@ loginBtn.addEventListener('click', () => {
   auth.signInWithEmailAndPassword(email, password)
     .then((userCredential) => {
       const user = userCredential.user;
-      if (user.emailVerified) {
-        console.log('User is signed in with a verified email.');
-        fetch('/api/login_user', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              uid: user.uid,
-              email: user.email,
-            }),
+      fetch('/api/login_user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            uid: user.uid,
+            email: user.email,
+          }),
+        })
+          .then((response) => {
+            if (response.ok) {
+              return response.json();
+            } else {
+              throw new Error('Failed to log in on the backend');
+            }
           })
-            .then((response) => {
-              if (response.ok) {
-                return response.json();
-              } else {
-                throw new Error('Failed to log in on the backend');
-              }
-            })
-            .then((data) => {
-              console.log('Login data sent to Flask backend:', data);
-              location.href = "/dashboard"; 
-            })
-            .catch((error) => {
-              console.error('Error logging in on the backend:', error.message);
-            });
-      } else {
-        alert('Please verify your email before signing in.');
-      }
+          .then((data) => {
+            console.log('Login data sent to Flask backend:', data);
+            location.href = "/dashboard"; 
+          })
+          .catch((error) => {
+            console.error('Error logging in on the backend:', error.message);
+          });
     })
     .catch((error) => {
       document.getElementById('wrongWarning').textContent = 'Invalid email or password.'
