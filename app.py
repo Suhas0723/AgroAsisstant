@@ -249,22 +249,13 @@ def index():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-@app.route('/water-usage')
-def water_usage():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    return render_template('water_usage1.html', uid=session['currentUser']['uid'], username=session['currentUser']['name'])
-
-
 @app.route('/chatbot', methods=['GET'])
 def chatbot_page():
     if "currentUser" in session:
         username = session["currentUser"]['name']
     else:
         return redirect(url_for("signup"))
-    return render_template('chatbot.html')
+    return render_template('chatbot.html', username=username)
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot_api():
@@ -328,7 +319,7 @@ def crops_page():
         doc_name = doc.id
         if uid in doc_name:
             matching_docs.append(doc.get().to_dict())
-    return render_template('crops.html', matching_docs=matching_docs)
+    return render_template('crops.html', matching_docs=matching_docs, username=username)
 
 @app.route('/crops', methods=['POST'])
 def crops_api():
@@ -336,7 +327,7 @@ def crops_api():
         plant_name = request.form['plant_name']
         if not plant_name.strip():
             error_message = "Plant name cannot be empty."
-            return render_template("crops.html", error=error_message)
+            return render_template("crops.html", error=error_message, username=username)
 
         plant_id = plant_name.lower().replace(' ', '-')
 
@@ -344,13 +335,13 @@ def crops_api():
         for doc in db.collection('plant_data').list_documents():
             if name == doc.id:
                 error_message = f"Plant: {plant_name} already exists in the database."
-                return render_template("crops.html", error=error_message)
+                return render_template("crops.html", error=error_message, username=username)
 
         plant_data = get_plant(plant_id)
 
         if 'error' in plant_data or 'data' not in plant_data:
             error_message = f"Could not fetch data for plant: {plant_name}"
-            return render_template("crops.html", error=error_message)
+            return render_template("crops.html", error=error_message, username=username)
         
         data = plant_data['data']
         extracted_data = {
@@ -515,7 +506,7 @@ def profile():
         session['currentUser']['email'] = email
 
         return redirect(url_for('profile'))
-    return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2)
+    return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2, username=username)
 
 def findPlantWithSlug(slug):
     uid = session['currentUser']['uid']
@@ -606,7 +597,7 @@ def diagnosis():
         return redirect(url_for("signup"))
     if request.method == "POST":
         if "plant" not in request.files:
-            return render_template("diagnosis.html", error="No Image Provided")
+            return render_template("diagnosis.html", error="No Image Provided", username=username)
 
         plant_pic = request.files["plant"]
 
@@ -647,12 +638,16 @@ def diagnosis():
             description = most_probable["details"]["description"]
             treatment_info = most_probable["details"]["treatment"]
 
-        return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path)
-    return render_template('diagnosis.html')
+        return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path, username=username)
+    return render_template('diagnosis.html', username=username)
 
 @app.route('/calendar')
 def calendar():
-    return render_template('calendar.html')
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
+    return render_template('calendar.html', username=username)
 
 
 @app.route('/api/get_schedule', methods=['GET', 'POST'])
@@ -837,6 +832,10 @@ def calculate_acres(ne_lat, ne_long, sw_lat, sw_long):
 
 @app.route('/plots', methods=["GET"])
 def show_plots():
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
     user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
     uid = session['currentUser']['uid']
     location = user['coordinates']
@@ -851,7 +850,7 @@ def show_plots():
     for doc in db.collection("users").document(session['currentUser']['uid']).collection("plots").list_documents():
         plot_list.append(doc.get().to_dict())
 
-    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list)
+    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list, username=username)
 
 
 @app.route('/plots', methods=['POST'])
@@ -912,7 +911,11 @@ def delete_plot():
 
 @app.route('/statistics')
 def statistics():
-    return render_template('statistics.html')
+    if "currentUser" in session:
+        username = session["currentUser"]['name']
+    else:
+        return redirect(url_for("signup"))
+    return render_template('statistics.html', username=username)
 
 @app.route('/api/get_statistics_data', methods=['GET', 'POST'])
 def get_irrigations():
