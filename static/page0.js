@@ -86,13 +86,6 @@ signupBtn.addEventListener('click', async () => {
       //console.log("YOoooooooOOOo")
       const user = userCredential.user;
       const uid = user.uid;
-        user.sendEmailVerification()
-        .then(() => {
-          alert('Verification email sent. Please check your inbox and verify your email before signing in.');
-        })
-        .catch((error) => {
-          alert('Error sending verification email: ' + error.message);
-        });
         console.log('User data saved to Firestore');
         firestore.collection('users').doc(uid).set({
           name: name,
