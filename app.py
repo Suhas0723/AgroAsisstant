@@ -1,7 +1,7 @@
 from datetime import date
 import firebase_admin
 from openai import OpenAI
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
 import yaml
 import requests
 from firebase_admin import credentials,  firestore
@@ -218,6 +218,10 @@ def api_to_db(uid):
 @app.route('/')
 def home():
     return render_template('landing_page.html')
+
+@app.route('/google12345.html')
+def google_verification():
+    return send_from_directory('static', 'google12345.html')
 
 @app.route('/robots.txt')
 def robots_txt():
