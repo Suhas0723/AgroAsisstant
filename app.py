@@ -219,9 +219,9 @@ def api_to_db(uid):
 def home():
     return render_template('landing_page.html')
 
-@app.route('/google12345.html')
+@app.route('/google1a83795a95853461.html')
 def google_verification():
-    return send_from_directory('static', 'google12345.html')
+    return send_from_directory('static', 'google1a83795a95853461.html')
 
 @app.route('/robots.txt')
 def robots_txt():
