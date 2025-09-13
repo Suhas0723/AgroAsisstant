@@ -10,6 +10,7 @@ import os
 import base64
 import re
 from math import radians, sin, cos, sqrt, atan2
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -217,6 +218,36 @@ def api_to_db(uid):
 @app.route('/')
 def home():
     return render_template('landing_page.html')
+
+@app.route('/robots.txt')
+def robots_txt():
+    return """User-agent: *
+Allow: /
+
+Sitemap: https://agroassistant.vercel.app/sitemap.xml
+""", 200, {'Content-Type': 'text/plain'}
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    current_date = datetime.now().strftime('%Y-%m-%d')
+    
+    sitemap = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://agroassistant.vercel.app/</loc>
+        <lastmod>{current_date}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://agroassistant.vercel.app/signup</loc>
+        <lastmod>{current_date}</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+</urlset>"""
+    
+    return sitemap, 200, {'Content-Type': 'application/xml'}
 
 @app.route('/dashboard')
 def index():
@@ -964,6 +995,9 @@ def get_irrigations():
 
 
     return jsonify(result)
+
+# WSGI application for Vercel deployment
+application = app
 
 if __name__ == "__main__":
     app.run(debug=True)
