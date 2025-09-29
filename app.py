@@ -219,6 +219,46 @@ def api_to_db(uid):
 def home():
     return render_template('landing_page.html')
 
+@app.route('/test-dashboard')
+def test_dashboard():
+    """Test route for dashboard without authentication"""
+    return render_template('dashboard.html', 
+                         plants=[], 
+                         daily_averages=[{'UV': 5, 'date': '2025-01-01'}], 
+                         soil_moisture=0.3, 
+                         soil_temperature=20, 
+                         username='Test User')
+
+@app.route('/test-plots')
+def test_plots():
+    """Test route for plots without authentication"""
+    return render_template('plots.html', 
+                         key='test-key', 
+                         lat=40.7128, 
+                         long=-74.0060, 
+                         user_plants=[], 
+                         plots=[], 
+                         username='Test User')
+
+@app.route('/test-statistics')
+def test_statistics():
+    """Test route for statistics without authentication"""
+    return render_template('statistics.html', username='Test User')
+
+@app.route('/test-profile')
+def test_profile():
+    """Test route for profile without authentication"""
+    return render_template('profile.html', 
+                         name='Test User', 
+                         email='test@example.com', 
+                         city='Test City', 
+                         country='Test Country', 
+                         state='Test State', 
+                         zip='12345', 
+                         line1='Test Address', 
+                         line2='', 
+                         username='Test User')
+
 @app.route('/google1a83795a95853461.html')
 def google_verification():
     return send_from_directory('static', 'google1a83795a95853461.html')
@@ -320,7 +360,51 @@ def create_user():
 @app.route("/signup", methods=["GET"])
 def signup():
     if request.method == "GET":
-        return render_template("login_signup.html", firebase_config=firebase_config, google_api_key=authfile['google']['apiKey'])
+        try:
+            return render_template("login_signup.html", firebase_config=firebase_config, google_api_key=authfile['google']['apiKey'])
+        except Exception as e:
+            print(f"Error in signup route: {e}")
+            return f"Error loading signup page: {str(e)}", 500
+
+@app.route("/simple-signup", methods=["GET"])
+def simple_signup():
+    """Simple signup page without Firebase dependencies"""
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>AgroAssistant - Sign Up</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { text-align: center; color: #6D9C4E; margin-bottom: 30px; }
+            .form-group { margin-bottom: 20px; }
+            label { display: block; margin-bottom: 5px; font-weight: bold; }
+            input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+            button { width: 100%; padding: 12px; background: #6D9C4E; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+            button:hover { background: #5a8a3e; }
+            .links { text-align: center; margin-top: 20px; }
+            .links a { color: #6D9C4E; text-decoration: none; margin: 0 10px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🌱 AgroAssistant</h1>
+            <p style="text-align: center; color: #666; margin-bottom: 30px;">
+                Welcome to AgroAssistant! This is a test version without authentication.
+            </p>
+            <div class="links">
+                <a href="/">🏠 Home</a>
+                <a href="/test-dashboard">📊 Dashboard</a>
+                <a href="/test-plots">🗺️ Plots</a>
+                <a href="/test-statistics">📈 Statistics</a>
+                <a href="/test-profile">👤 Profile</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
         
 @app.route('/api/login_user', methods=['POST'])
 def login_user():
