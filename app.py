@@ -896,6 +896,7 @@ def save_plots():
     sw_long = request.form.get("sw_long")
     ne_lat = request.form.get('ne_lat')
     ne_long = request.form.get("ne_long")
+    polygon_path = request.form.get("polygon_path")
 
 
     client = OpenAI(api_key=authfile['openAI']['apiKey'])
@@ -929,6 +930,19 @@ def save_plots():
         'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long),
         'idealValues': json.loads(raw)
     }
+    
+    # Add polygon path if provided
+    if polygon_path:
+        try:
+            polygon_coords = json.loads(polygon_path)
+            # Convert to Firestore-compatible format (array of objects instead of nested arrays)
+            plant_data['polygon_path'] = [
+                {'lat': coord[0], 'lng': coord[1]} 
+                for coord in polygon_coords
+            ]
+        except json.JSONDecodeError:
+            # If polygon_path is invalid JSON, ignore it
+            pass
     
     db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)
 

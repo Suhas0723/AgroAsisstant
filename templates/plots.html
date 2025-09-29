@@ -30,14 +30,34 @@
       background-color: var(--color-white);
       color: var(--color-primary);
       border: 1px solid var(--color-primary);
-      border-radius: 0.5rem;
+      border-radius: 0.75rem;
       padding: 1rem;
-      margin-bottom: 0.5rem;
+      margin-bottom: 0.75rem;
       position: relative;
       cursor: pointer;
-      transition: background 0.3s ease, color 0.3s ease;
-      font-weight: bold;
+      transition: all 0.3s ease;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
+    
+    .accordion:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    
+    .accordion::before {
+      content: "";
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      margin-right: 0.75rem;
+      flex-shrink: 0;
+      border: 2px solid rgba(0,0,0,0.1);
+      background-color: var(--plot-color-before, #ccc);
+    }
+    
     .accordion::after {
       content: "\25B6"; /* ▶ */
       font-size: 1rem;
@@ -47,10 +67,12 @@
       transform: translateY(-50%) rotate(0deg);
       transition: transform 0.3s ease;
     }
+    
     .accordion.active {
       background-color: var(--color-primary);
       color: var(--color-white);
     }
+    
     .accordion.active::after {
       transform: translateY(-50%) rotate(90deg); /* ▶ → ▼ */
     }
@@ -58,15 +80,58 @@
     .panel {
       max-height: 0;
       overflow: hidden;
-      background-color: var(--color-background);
-      border-radius: 0 0 0.5rem 0.5rem;
+      background-color: #f8f9fa;
+      border-radius: 0 0 0.75rem 0.75rem;
       transition: max-height 0.4s ease;
+      margin-bottom: 0.75rem;
+      border: 1px solid #e9ecef;
+      border-top: none;
       /* static padding so scrollHeight is accurate */
-      padding: 0 1rem;
+      padding: 0 1.25rem;
     }
     .panel.open {
       /* padding appears immediately when open */
-      padding: 0.75rem 1rem;
+      padding: 1rem 1.25rem;
+    }
+    
+    .panel-content {
+      padding: 0.5rem 0;
+    }
+    
+    .crops-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 1rem 0;
+    }
+    
+    .crops-list li {
+      background: white;
+      padding: 0.5rem 0.75rem;
+      margin: 0.25rem 0;
+      border-radius: 0.5rem;
+      border: 1px solid #dee2e6;
+      font-size: 0.9rem;
+      color: #495057;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    
+    .delete-btn {
+      background: transparent !important;
+      color: var(--color-danger) !important;
+      padding: 0.6rem 1.2rem !important;
+      border: 1px solid var(--color-danger) !important;
+      border-radius: 0.5rem !important;
+      cursor: pointer !important;
+      font-size: 0.9rem !important;
+      font-weight: 500 !important;
+      transition: all 0.2s ease !important;
+    }
+    
+    .delete-btn:hover {
+      background: var(--color-danger) !important;
+      color: white !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 2px 4px rgba(220, 53, 69, 0.2) !important;
     }
 
 
@@ -75,6 +140,7 @@
   <script
     src="https://maps.googleapis.com/maps/api/js?key={{ key }}&libraries=drawing,marker"
     defer
+    onerror="handleMapError()"
   ></script>
 </head>
 <body>
@@ -121,7 +187,7 @@
           "
           required
         /><br>
-        <label for="crop-type"><b>Crop Type</b></label>
+        <label for="crop-type"><b>Crops</b></label>
         <br>
         {% for plant in user_plants %}
           <input type="checkbox" name="crop-type" value="{{ plant.scientific_name }}" />
@@ -193,6 +259,10 @@
           "
         >
           <h2 style="font-size: 1.2rem; text-align: center">Plots</h2>
+          <p style="font-size: 0.8rem; color: #666; text-align: center; margin-bottom: 1rem;">
+            Use the polygon tool to draw diagonal plots. Click to add points, double-click to finish.
+          </p>
+          
 
           {% if plots|length == 0 %}
             <p style="text-align:center" id="sidebar-status">
@@ -201,19 +271,21 @@
           {% endif %}
 
           {% for plot in plots %}
-            <button type="button" class="accordion">
+            <button type="button" class="accordion" data-plot-color="{{ loop.index0 }}">
               {{ plot.plot_name }}
             </button>
             <div class="panel">
-              <p><b>Crop Type:</b></p>
-              <ul>
-                {% for crop in plot.crop %}
-                  <li>{{crop}}</li>
-                {% endfor %}
-              </ul>
-            <button type="button" class="delete-plot-btn" data-plot-name="{{ plot.plot_name }}" style="padding: 8px 14px; background: var(--color-danger); color: white; border: none; border-radius: 6px; cursor: pointer;">
-              Delete
-            </button>
+              <div class="panel-content">
+                <p style="margin: 0 0 0.75rem 0; font-weight: 600; color: #495057; font-size: 0.95rem;">🌱 Crops</p>
+                <ul class="crops-list">
+                  {% for crop in plot.crop %}
+                    <li>{{crop}}</li>
+                  {% endfor %}
+                </ul>
+                <button type="button" class="delete-btn delete-plot-btn" data-plot-name="{{ plot.plot_name }}">
+                  Delete Plot
+                </button>
+              </div>
             </div>
           {% endfor %}
 
@@ -283,6 +355,43 @@
   </div>
 
   <script>
+    // Handle Google Maps API errors
+    function handleMapError() {
+      const mapContainer = document.getElementById('map');
+      mapContainer.innerHTML = `
+        <div style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100%;
+          background: #f5f5f5;
+          border-radius: 12px;
+          padding: 2rem;
+          text-align: center;
+        ">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">🗺️</div>
+          <h3 style="color: #333; margin-bottom: 1rem;">Google Maps Unavailable</h3>
+          <p style="color: #666; margin-bottom: 1rem;">
+            Please enable billing for your Google Maps API key to use the map features.
+          </p>
+          <p style="color: #888; font-size: 0.9rem;">
+            Visit the <a href="https://console.cloud.google.com/billing" target="_blank">Google Cloud Console</a> 
+            to enable billing for your project.
+          </p>
+        </div>
+      `;
+    }
+
+    // Check if Google Maps loaded successfully
+    function checkGoogleMaps() {
+      if (typeof google === 'undefined' || !google.maps) {
+        handleMapError();
+        return false;
+      }
+      return true;
+    }
+
     function initAccordion() {
       document.querySelectorAll(".accordion").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -305,15 +414,18 @@
       });
     }
 
-
-
     function initMap() {
+      // Check if Google Maps is available
+      if (!checkGoogleMaps()) {
+        return;
+      }
+
       let currentRectangle = null;
       let currentCoords = null;
-      const plots = {{ plots | tojson }};
+      const plots = {{ plots | tojson | safe }};
       const center = {
-        lat: parseFloat(`{{ lat }}`),
-        lng: parseFloat(`{{ long }}`)
+        lat: parseFloat({{ lat }}),
+        lng: parseFloat({{ long }})
       };
       const bounds = {
         north: center.lat + 0.00755,
@@ -333,46 +445,103 @@
         }
       );
 
-      plots.forEach(plot => {
-        new google.maps.Rectangle({
-          strokeColor: "#FF0000",
-          strokeOpacity: 0.8,
-          strokeWeight: 2,
-          fillColor: "#FF0000",
-          fillOpacity: 0.35,
-          map,
-          bounds: {
-            north: parseFloat(plot.ne_lat),
-            south: parseFloat(plot.sw_lat),
-            east: parseFloat(plot.ne_long),
-            west: parseFloat(plot.sw_long)
-          }
-        });
-        new google.maps.marker.AdvancedMarkerElement({
+      // Color palette for different fields
+      const colors = [
+        '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', 
+        '#00FFFF', '#FFA500', '#800080', '#008000', '#FFC0CB'
+      ];
+      
+      plots.forEach((plot, index) => {
+        const color = colors[index % colors.length];
+        
+        // Check if plot has polygon path data
+        if (plot.polygon_path && plot.polygon_path.length > 0) {
+          // Display as polygon
+          new google.maps.Polygon({
+            strokeColor: color,
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.35,
+            map,
+            paths: plot.polygon_path.map(coord => ({
+              lat: coord.lat,
+              lng: coord.lng
+            }))
+          });
+        } else {
+          // Fallback to rectangle for existing plots
+          new google.maps.Rectangle({
+            strokeColor: color,
+            strokeOpacity: 0.8,
+            strokeWeight: 2,
+            fillColor: color,
+            fillOpacity: 0.35,
+            map,
+            bounds: {
+              north: parseFloat(plot.ne_lat),
+              south: parseFloat(plot.sw_lat),
+              east: parseFloat(plot.ne_long),
+              west: parseFloat(plot.sw_long)
+            }
+          });
+        }
+        
+        // Add marker at southwest corner with unique styling
+        const marker = new google.maps.marker.AdvancedMarkerElement({
           map,
           position: {
             lat: parseFloat(plot.sw_lat),
             lng: parseFloat(plot.sw_long)
           },
-          title: "A"
+          title: plot.plot_name
         });
+        
+        // Create custom marker content with field name
+        const markerContent = document.createElement('div');
+        markerContent.style.cssText = `
+          background: ${color};
+          color: white;
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: bold;
+          text-align: center;
+          white-space: nowrap;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          border: 2px solid white;
+          max-width: 120px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        `;
+        markerContent.textContent = plot.plot_name;
+        
+        marker.content = markerContent;
+      });
+      
+      // Set color indicators on accordion buttons
+      document.querySelectorAll('.accordion[data-plot-color]').forEach(button => {
+        const colorIndex = parseInt(button.dataset.plotColor);
+        const color = colors[colorIndex % colors.length];
+        button.style.setProperty('--plot-color', color);
+        button.style.setProperty('--plot-color-before', color);
       });
 
       map.setTilt(0);
 
       const drawingManager = new google.maps.drawing.DrawingManager({
-        drawingMode: google.maps.drawing.OverlayType.RECTANGLE,
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
         drawingControl: true,
         drawingControlOptions: {
           position: google.maps.ControlPosition.TOP_CENTER,
-          drawingModes: ["rectangle"]
+          drawingModes: ["polygon"]
         },
-        rectangleOptions: {
+        polygonOptions: {
           fillColor: "#00FF00",
           fillOpacity: 0.3,
           strokeWeight: 2,
-          editable: false,
-          draggable: false
+          editable: true,
+          draggable: true
         }
       });
       drawingManager.setMap(map);
@@ -381,14 +550,23 @@
         drawingManager,
         "overlaycomplete",
         event => {
-          if (event.type === "rectangle") {
+          if (event.type === "polygon") {
             if (currentRectangle) currentRectangle.setMap(null);
             currentRectangle = event.overlay;
-            const sw = currentRectangle.getBounds().getSouthWest();
-            const ne = currentRectangle.getBounds().getNorthEast();
+            
+            // Get the bounds of the polygon to calculate area
+            const bounds = new google.maps.LatLngBounds();
+            const path = currentRectangle.getPath();
+            for (let i = 0; i < path.getLength(); i++) {
+              bounds.extend(path.getAt(i));
+            }
+            
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
             currentCoords = {
               southwest: [sw.lat(), sw.lng()],
-              northeast: [ne.lat(), ne.lng()]
+              northeast: [ne.lat(), ne.lng()],
+              polygonPath: path.getArray().map(point => [point.lat(), point.lng()])
             };
             document.getElementById("delete-rectangle").style.display =
               "inline-block";
@@ -436,6 +614,7 @@
           data.append("sw_long", currentCoords.southwest[1]);
           data.append("ne_lat", currentCoords.northeast[0]);
           data.append("ne_long", currentCoords.northeast[1]);
+          data.append("polygon_path", JSON.stringify(currentCoords.polygonPath));
 
           fetch("/plots", {
             method: "POST",
@@ -458,7 +637,17 @@
       initAccordion();
     }
 
-    window.onload = initMap;
+    // Initialize map when page loads
+    window.onload = function() {
+      // Give Google Maps a moment to load
+      setTimeout(() => {
+        if (typeof google !== 'undefined' && google.maps) {
+          initMap();
+        } else {
+          handleMapError();
+        }
+      }, 1000);
+    };
   </script>
 
   <script src="{{ url_for('static', filename='index.js') }}"></script>
