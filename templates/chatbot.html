@@ -104,7 +104,10 @@
         function addUserMessage(text) {
         const wrapper = document.createElement('div');
         wrapper.classList.add('message', 'user');
-        wrapper.innerHTML = `<b>You:</b> ${text}`;
+        const label = document.createElement('b');
+        label.textContent = 'You:';
+        wrapper.appendChild(label);
+        wrapper.appendChild(document.createTextNode(' ' + text));
         chatBox.appendChild(wrapper);
         chatBox.scrollTop = chatBox.scrollHeight;
         }

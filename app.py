@@ -1,886 +1,918 @@
-from datetime import date
-import firebase_admin
-from openai import OpenAI
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_from_directory
-import yaml
-import requests
-from firebase_admin import credentials,  firestore
-import json
-import os 
 import base64
+import io
+import json
+import logging
+import math
+import os
 import re
-from math import radians, sin, cos, sqrt, atan2
-from datetime import datetime
+from datetime import date, datetime
+from functools import wraps
+
+import firebase_admin
+import requests
+from firebase_admin import auth as fb_auth
+from firebase_admin import credentials, firestore
+from flask import (Flask, jsonify, redirect, render_template, request,
+                   send_from_directory, session, url_for)
+from google.cloud.firestore_v1.base_query import FieldFilter
+from openai import OpenAI
+from PIL import Image, UnidentifiedImageError
+
+try:  # optional: load a local .env file during development
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("agroassistant")
+
+# ---------------------------------------------------------------------------
+# Configuration — every secret comes from environment variables.
+# See .env.example for the full list. Nothing secret lives in the repo.
+# ---------------------------------------------------------------------------
+
+
+def env(name, default=None, required=True):
+    value = os.environ.get(name, default)
+    if required and not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
 
 app = Flask(__name__)
+app.secret_key = env("FLASK_SECRET_KEY")
+app.config.update(
+    MAX_CONTENT_LENGTH=10 * 1024 * 1024,  # 10 MB upload cap
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=bool(os.environ.get("VERCEL")) or os.environ.get("SESSION_COOKIE_SECURE") == "1",
+)
 
+OPENAI_API_KEY = env("OPENAI_API_KEY")
+STORMGLASS_API_KEY = env("STORMGLASS_API_KEY")
+WEATHERAPI_KEY = env("WEATHERAPI_KEY")
+TREFLE_API_KEY = env("TREFLE_API_KEY")
+PLANT_ID_API_KEY = env("PLANT_ID_API_KEY")
+GOOGLE_API_KEY = env("GOOGLE_API_KEY")          # browser key, used for geocoding on signup
+GOOGLE_MAPS_API_KEY = env("GOOGLE_MAPS_API_KEY")  # browser key, used on the plots map
+AI_DAILY_LIMIT = int(os.environ.get("AI_DAILY_LIMIT", "60"))  # OpenAI calls per user per day
 
-UPLOAD_FOLDER = 'uploads'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-with open('auth.yaml', 'r') as file:
-    authfile = yaml.safe_load(file)
-
-
-
-app.secret_key = authfile['flask']['secretKey']
-
-firebase_config = authfile.get('firebase', {})
-
-cred = credentials.Certificate("tsa-agriculture-app-firebase-adminsdk-4jash-a3a06e84e8.json")
-firebase = firebase_admin.initialize_app(cred)
-db = firestore.client()
-
-api_usage = {
-    'stormglass': 0,
-    'weatherapi': 0,
-    'date': str(date.today())  
+# Firebase web config is public by design (it ships to every browser);
+# access is controlled by Firebase Auth + Firestore rules, not by hiding it.
+firebase_config = {
+    "apiKey": env("FIREBASE_API_KEY"),
+    "authDomain": env("FIREBASE_AUTH_DOMAIN"),
+    "projectId": env("FIREBASE_PROJECT_ID"),
+    "storageBucket": env("FIREBASE_STORAGE_BUCKET", required=False),
+    "messagingSenderId": env("FIREBASE_MESSAGING_SENDER_ID", required=False),
+    "appId": env("FIREBASE_APP_ID"),
+    "measurementId": env("FIREBASE_MEASUREMENT_ID", required=False),
 }
 
-def check_and_increment_usage(api_name):
-    today_str = str(date.today())
 
-    if api_usage['date'] != today_str:
-        api_usage['stormglass'] = 0
-        api_usage['weatherapi'] = 0
-        api_usage['date'] = today_str
+def load_service_account():
+    """FIREBASE_SERVICE_ACCOUNT_JSON may hold the raw JSON or a base64 copy of it.
+    Locally you can instead point GOOGLE_APPLICATION_CREDENTIALS at the JSON file."""
+    raw = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if raw:
+        if not raw.startswith("{"):
+            raw = base64.b64decode(raw).decode("utf-8")
+        return credentials.Certificate(json.loads(raw))
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if path and os.path.exists(path):
+        return credentials.Certificate(path)
+    raise RuntimeError("Set FIREBASE_SERVICE_ACCOUNT_JSON (or GOOGLE_APPLICATION_CREDENTIALS for local dev)")
 
-    if api_usage[api_name] >= 10:
-        raise Exception(f"{api_name} daily request limit reached (10 requests).")
+
+firebase_admin.initialize_app(load_service_account())
+db = firestore.client()
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
+HTTP_TIMEOUT = 15
 
 
-    api_usage[api_name] += 1
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return resp
 
 
+@app.errorhandler(413)
+def too_large(_):
+    if request.path.startswith("/api/") or request.is_json:
+        return jsonify({"error": "Upload too large (max 10 MB)."}), 413
+    return render_template("diagnosis.html", error="Image too large (max 10 MB).",
+                           username=session.get("currentUser", {}).get("name", "")), 413
 
-def get_stormglass_api():
-    
-    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
-    print(user, session['currentUser']['uid'])
-    
-    location = user['coordinates']
 
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def current_uid():
+    return session.get("currentUser", {}).get("uid")
+
+
+def login_required(view):
+    """For HTML pages: redirect to the sign-in page when not logged in."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_uid():
+            return redirect(url_for("signup"))
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def api_login_required(view):
+    """For JSON/API endpoints: 401 when not logged in."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not current_uid():
+            return jsonify({"error": "Not logged in"}), 401
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def verify_request_token():
+    """Verify the Firebase ID token sent by the browser. Returns the decoded token or None."""
+    data = request.get_json(silent=True) or {}
+    token = data.get("idToken")
+    if not token or not isinstance(token, str):
+        return None, data
     try:
-        lat = location[0]
-        lng = location[1]
-    except:
-        lat = 33.7501
-        lng = 84.3885
-
-    stormglass_response = requests.get(
-        'https://api.stormglass.io/v2/bio/point',
-        params={
-            'lat': lat,
-            'lng': lng,
-            'params': ','.join(['soilMoisture','soilTemperature'])
-        },
-        headers={
-            'Authorization': authfile['stormglass']['apiKey']
-        }
-    )
-    response = stormglass_response.json()
-
-    return response
-
-def get_weatherapi_averages():
-    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
-    city = user['address']['city']
-
-    weatherapi_response = requests.get(
-        'https://api.weatherapi.com/v1/forecast.json',
-        params={
-            'key': authfile['weatherapi']['apiKey'],
-            'q': city,
-            'days': 3
-        }
-    )
-    weather_data = weatherapi_response.json()  
-    
-    forecast_days = weather_data['forecast']['forecastday']
-    daily_averages = []
-
-    for day in forecast_days:
-        date_str = day['date']
-        hours = day['hour']
-
-        total_temp = 0.0
-        total_cloud = 0.0
-        total_precip = 0.0
-        count = 0
-
-        for hour_data in hours:
-            total_temp += hour_data['temp_c']
-            total_cloud += hour_data['cloud']
-            total_precip += hour_data['precip_in']
-            count += 1
-
-        avg_temp = round(total_temp / count, 2)
-        avg_cloud = round(total_cloud / count, 2)
-        avg_precip = round(total_precip / count, 2)
-
-        daily_averages.append({
-            "date": date_str,
-            "averageTemperature": avg_temp,
-            "averageCloud": avg_cloud,
-            "averagePrecip": avg_precip, 
-            "UV": weather_data['forecast']['forecastday'][0]['day']['uv']
-        })
-
-    return {"daily_averages": daily_averages}
-
-def chatbot_request(question):
-    client = OpenAI(api_key=authfile['openAI']['apiKey'])
-    instructions =  """
-        You are AgriBot, an AI chatbot designed to serve only as an agricultural assistant. You can provide expert answers, guidance, and data related to agriculture, including:
-
-        1. Crop Data: planting times, yield information, recommended seed varieties, soil nutrient needs, pest/disease management, harvesting guidelines, etc.
-        2. Farming Practices: irrigation methods, sustainable farming, organic practices, use of pesticides and fertilizers, crop rotation, etc.
-        3. Agricultural Economics: market trends, cost-benefit analysis of certain crops, yield projections, and similar topics.
-        4. Agri-Tech: modern technologies like drones, sensors, or software solutions that help optimize crop production and farm management.
-
-        Your only goal is to address questions in these agricultural domains. Ensure responses are 50 words or less and do not include markdown.
-        """
+        return fb_auth.verify_id_token(token), data
+    except Exception:
+        log.warning("Rejected invalid Firebase ID token")
+        return None, data
 
 
-    completion = client.chat.completions.create(
+def username():
+    return session.get("currentUser", {}).get("name", "")
+
+
+# ---------------------------------------------------------------------------
+# OpenAI with a per-user daily quota (stored in Firestore so it works on serverless)
+# ---------------------------------------------------------------------------
+
+class QuotaExceeded(Exception):
+    pass
+
+
+def consume_ai_quota(uid):
+    ref = db.collection("usage").document(f"{uid}-{date.today()}")
+
+    @firestore.transactional
+    def txn(transaction):
+        snap = ref.get(transaction=transaction)
+        count = (snap.to_dict() or {}).get("openai", 0) if snap.exists else 0
+        if count >= AI_DAILY_LIMIT:
+            return False
+        transaction.set(ref, {"openai": count + 1, "uid": uid, "date": str(date.today())}, merge=True)
+        return True
+
+    if not txn(db.transaction()):
+        raise QuotaExceeded()
+
+
+def ask_openai(uid, system, user, json_mode=False):
+    consume_ai_quota(uid)
+    kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+    completion = openai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": instructions},
-            {
-                "role": "user",
-                "content": question
-            }
-        ]
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        **kwargs,
     )
-    response = dict(completion.choices[0].message)
-    response = response['content']
-    return response
+    return completion.choices[0].message.content or ""
 
-def get_plant(plant_id):
-    base_url = f"https://trefle.io/api/v1/plants/{plant_id}"
-    headers = {
-        "Authorization": f"Bearer {authfile['plantApi']['apiKey']}"
+
+QUOTA_MSG = "Daily AI limit reached. Please try again tomorrow."
+
+# ---------------------------------------------------------------------------
+# Weather / soil data (cached once per user per day in Firestore)
+# ---------------------------------------------------------------------------
+
+DEFAULT_COORDS = (33.7501, -84.3885)  # Atlanta, GA
+
+
+def user_coords(user):
+    coords = (user or {}).get("coordinates")
+    try:
+        return float(coords[0]), float(coords[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        return DEFAULT_COORDS
+
+
+def get_stormglass(lat, lng):
+    resp = requests.get(
+        "https://api.stormglass.io/v2/bio/point",
+        params={"lat": lat, "lng": lng, "params": "soilMoisture,soilTemperature"},
+        headers={"Authorization": STORMGLASS_API_KEY},
+        timeout=HTTP_TIMEOUT,
+    )
+    data = resp.json()
+    if not resp.ok or not data.get("hours"):
+        raise RuntimeError(f"Stormglass error {resp.status_code}: {data.get('errors')}")
+    return data
+
+
+def get_weatherapi_averages(query):
+    resp = requests.get(
+        "https://api.weatherapi.com/v1/forecast.json",
+        params={"key": WEATHERAPI_KEY, "q": query, "days": 3},
+        timeout=HTTP_TIMEOUT,
+    )
+    weather = resp.json()
+    if not resp.ok or "forecast" not in weather:
+        raise RuntimeError(f"WeatherAPI error {resp.status_code}: {weather.get('error')}")
+
+    daily = []
+    for day in weather["forecast"]["forecastday"]:
+        hours = day["hour"] or [{}]
+        n = len(hours)
+        daily.append({
+            "date": day["date"],
+            "averageTemperature": round(sum(h.get("temp_c", 0) for h in hours) / n, 2),
+            "averageCloud": round(sum(h.get("cloud", 0) for h in hours) / n, 2),
+            "averagePrecip": round(sum(h.get("precip_in", 0) for h in hours) / n, 2),  # hourly average
+            "totalPrecip": day["day"].get("totalprecip_in", 0),                         # daily total (in)
+            "UV": day["day"].get("uv"),
+        })
+    return {"daily_averages": daily}
+
+
+def ensure_daily_data(uid, user=None):
+    """Fetch today's soil + weather data if we don't already have it. Never stores error payloads."""
+    doc_id = f"{date.today()}-{uid}"
+    sg_ref = db.collection("stormglass_data").document(doc_id)
+    wx_ref = db.collection("weatherapi_data").document(doc_id)
+    sg_snap, wx_snap = sg_ref.get(), wx_ref.get()
+    sg, wx = sg_snap.to_dict() if sg_snap.exists else None, wx_snap.to_dict() if wx_snap.exists else None
+
+    if sg is None or wx is None:
+        if user is None:
+            user = db.collection("users").document(uid).get().to_dict() or {}
+        lat, lng = user_coords(user)
+    if sg is None:
+        try:
+            sg = get_stormglass(lat, lng)
+            sg_ref.set(sg)
+        except Exception:
+            log.exception("Stormglass fetch failed")
+            sg = {}
+    if wx is None:
+        try:
+            city = (user.get("address") or {}).get("city")
+            wx = get_weatherapi_averages(city or f"{lat},{lng}")
+            wx_ref.set(wx)
+        except Exception:
+            log.exception("WeatherAPI fetch failed")
+            wx = {}
+    return sg, wx
+
+
+def current_conditions(uid):
+    sg, wx = ensure_daily_data(uid)
+    hours = sg.get("hours") or [{}]
+    days = wx.get("daily_averages") or [{}]
+    return {
+        "soilMoisture": (hours[0].get("soilMoisture") or {}).get("sg", 0.0),
+        "avgCloud": days[0].get("averageCloud", 0.0),
+        "avgPrecip": days[0].get("averagePrecip", 0.0),
+        "totalPrecip": days[0].get("totalPrecip", 0.0),
+        "avgTemp": days[0].get("averageTemperature", 0.0),
     }
+
+
+def first_source(values):
+    values = values or {}
+    for key in ("noaa", "sg"):
+        if values.get(key) is not None:
+            return values[key]
+    return next(iter(values.values()), None)
+
+
+# ---------------------------------------------------------------------------
+# Plants
+# ---------------------------------------------------------------------------
+
+def user_plants(uid):
+    """All plant docs belonging to a user (indexed query instead of scanning every user's docs)."""
+    docs = db.collection("plant_data").where(filter=FieldFilter("uid", "==", uid)).stream()
+    return [d.to_dict() for d in docs]
+
+
+def plant_ref_for(uid, slug):
+    """Plant docs are stored as '<slug>-<uid>'; confirm ownership before returning."""
+    if not slug or not isinstance(slug, str) or "/" in slug:
+        return None
+    ref = db.collection("plant_data").document(f"{slug}-{uid}")
+    snap = ref.get()
+    if snap.exists and (snap.to_dict() or {}).get("uid") == uid:
+        return ref
+    return None
+
+
+def trefle_get(path, **params):
+    resp = requests.get(f"https://trefle.io/api/v1/{path}",
+                        headers={"Authorization": f"Bearer {TREFLE_API_KEY}"},
+                        params=params, timeout=HTTP_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def lookup_plant(name):
+    """Try the name as a Trefle slug first, then fall back to a search."""
+    slug = name.lower().strip().replace(" ", "-")
     try:
-        response = requests.get(base_url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
-
-
-def plant_to_db(plant_data, uid):
+        data = trefle_get(f"plants/{slug}")
+        if data.get("data"):
+            return data["data"]
+    except requests.RequestException:
+        pass
     try:
-        plant_data = dict(plant_data)
+        results = trefle_get("plants/search", q=name).get("data") or []
+        if results:
+            return trefle_get(f"plants/{results[0]['id']}").get("data")
+    except requests.RequestException:
+        log.exception("Trefle search failed")
+    return None
 
-        print("Plant Data Received:", plant_data)
 
-        data_section = plant_data.get("data", {})
-        if not isinstance(data_section, dict):
-            raise ValueError("The 'data' field is missing or not a dictionary.")
-        
-        slug = data_section.get("slug")
-        if not slug or not isinstance(slug, str):
-            raise ValueError("The 'slug' field is missing, empty, or not a string in the 'data' section.")
+# ---------------------------------------------------------------------------
+# Geometry
+# ---------------------------------------------------------------------------
 
-        if not uid or not isinstance(uid, str):
-            raise ValueError("The 'uid' is missing, empty, or not a string.")
+EARTH_R = 6371000.0
+SQM_PER_ACRE = 4046.8564224
 
-        doc_name = f"{slug}-{uid}"
 
-        print(f"Slug: {slug}, UID: {uid}, Document Name: {doc_name}")
+def bbox_acres(ne_lat, ne_long, sw_lat, sw_long):
+    ne_lat, ne_long, sw_lat, sw_long = map(float, (ne_lat, ne_long, sw_lat, sw_long))
+    height = EARTH_R * math.radians(abs(ne_lat - sw_lat))
+    width = EARTH_R * math.radians(abs(ne_long - sw_long)) * math.cos(math.radians((ne_lat + sw_lat) / 2))
+    return round(width * height / SQM_PER_ACRE, 2)
 
-        db.collection('plant_data').document(doc_name).set(plant_data)
-        print("Data successfully stored in Firestore.")
 
-    except Exception as e:
-        print(f"Error in plant_to_db: {e}")
-        raise
+def polygon_acres(points):
+    """Shoelace formula on a local equirectangular projection (accurate for field-sized plots).
+    points: list of {'lat':..,'lng':..}"""
+    if len(points) < 3:
+        return None
+    lat0 = math.radians(sum(p["lat"] for p in points) / len(points))
+    xy = [(EARTH_R * math.radians(p["lng"]) * math.cos(lat0), EARTH_R * math.radians(p["lat"])) for p in points]
+    area = 0.0
+    for (x1, y1), (x2, y2) in zip(xy, xy[1:] + xy[:1]):
+        area += x1 * y2 - x2 * y1
+    return round(abs(area) / 2 / SQM_PER_ACRE, 2)
 
-def api_to_db(uid):
-    doc_id = str(date.today())
 
-    stormglass_doc = db.collection("stormglass_data").document(doc_id+"-"+uid).get()
-    if not stormglass_doc.exists:
-        stormglass_data = get_stormglass_api()
-        #print(stormglass_data)
-        db.collection("stormglass_data").document(doc_id+"-"+uid).set(stormglass_data)
-        
+def plot_acres(plot):
+    try:
+        if plot.get("polygon_path"):
+            acres = polygon_acres(plot["polygon_path"])
+            if acres is not None:
+                return acres
+        return bbox_acres(plot["ne_lat"], plot["ne_long"], plot["sw_lat"], plot["sw_long"])
+    except (KeyError, TypeError, ValueError):
+        return plot.get("acres", 0)
 
-    weatherapi_doc = db.collection("weatherapi_data").document(doc_id+"-"+uid).get()
-    if not weatherapi_doc.exists:
-        weather_data = get_weatherapi_averages()  
-        db.collection("weatherapi_data").document(doc_id+"-"+uid).set(weather_data)
-        
-@app.route('/')
+
+def user_plots(uid):
+    plots = {}
+    for doc in db.collection("users").document(uid).collection("plots").stream():
+        plot = doc.to_dict() or {}
+        if plot.get("plot_name"):
+            plot["acres"] = plot_acres(plot)  # recompute so older, mis-measured plots are corrected
+            plots[plot["plot_name"]] = plot
+    return plots
+
+
+PLOT_NAME_RE = re.compile(r"^(?!\.{1,2}$)(?!__.*__$)[^/]{1,100}$")
+
+
+def valid_plot_name(name):
+    return isinstance(name, str) and bool(PLOT_NAME_RE.match(name.strip())) and name.strip() == name
+
+
+# ---------------------------------------------------------------------------
+# Public pages
+# ---------------------------------------------------------------------------
+
+@app.route("/")
 def home():
-    return render_template('landing_page.html')
+    return render_template("landing_page.html")
 
-@app.route('/test-dashboard')
-def test_dashboard():
-    """Test route for dashboard without authentication"""
-    return render_template('dashboard.html', 
-                         plants=[], 
-                         daily_averages=[{'UV': 5, 'date': '2025-01-01'}], 
-                         soil_moisture=0.3, 
-                         soil_temperature=20, 
-                         username='Test User')
 
-@app.route('/test-plots')
-def test_plots():
-    """Test route for plots without authentication"""
-    return render_template('plots.html', 
-                         key='test-key', 
-                         lat=40.7128, 
-                         long=-74.0060, 
-                         user_plants=[], 
-                         plots=[], 
-                         username='Test User')
-
-@app.route('/test-statistics')
-def test_statistics():
-    """Test route for statistics without authentication"""
-    return render_template('statistics.html', username='Test User')
-
-@app.route('/test-profile')
-def test_profile():
-    """Test route for profile without authentication"""
-    return render_template('profile.html', 
-                         name='Test User', 
-                         email='test@example.com', 
-                         city='Test City', 
-                         country='Test Country', 
-                         state='Test State', 
-                         zip='12345', 
-                         line1='Test Address', 
-                         line2='', 
-                         username='Test User')
-
-@app.route('/google1a83795a95853461.html')
+@app.route("/google1a83795a95853461.html")
 def google_verification():
-    return send_from_directory('static', 'google1a83795a95853461.html')
+    return send_from_directory("static", "google1a83795a95853461.html")
 
-@app.route('/robots.txt')
+
+@app.route("/robots.txt")
 def robots_txt():
-    return """User-agent: *
-Allow: /
+    return ("User-agent: *\nAllow: /\n\nSitemap: https://agroassistant.vercel.app/sitemap.xml\n",
+            200, {"Content-Type": "text/plain"})
 
-Sitemap: https://agroassistant.vercel.app/sitemap.xml
-""", 200, {'Content-Type': 'text/plain'}
 
-@app.route('/sitemap.xml')
+@app.route("/sitemap.xml")
 def sitemap_xml():
-    current_date = datetime.now().strftime('%Y-%m-%d')
-    
+    today = datetime.now().strftime("%Y-%m-%d")
     sitemap = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>https://agroassistant.vercel.app/</loc>
-        <lastmod>{current_date}</lastmod>
-        <changefreq>weekly</changefreq>
-        <priority>1.0</priority>
-    </url>
-    <url>
-        <loc>https://agroassistant.vercel.app/signup</loc>
-        <lastmod>{current_date}</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
+    <url><loc>https://agroassistant.vercel.app/</loc><lastmod>{today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+    <url><loc>https://agroassistant.vercel.app/signup</loc><lastmod>{today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
 </urlset>"""
-    
-    return sitemap, 200, {'Content-Type': 'application/xml'}
+    return sitemap, 200, {"Content-Type": "application/xml"}
 
-@app.route('/dashboard')
-def index():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    
-    doc_id = str(date.today())
-    try:
-        uid = session['currentUser']['uid']
-        collection_ref = db.collection('plant_data')
-        documents = collection_ref.list_documents()
-        matching_docs = []
-        for doc in documents:
-            doc_name = doc.id
-            if uid in doc_name:
-                matching_docs.append(doc.get().to_dict())
-
-        if len(matching_docs) > 4:
-            matching_docs = matching_docs[:4]
-        # api_to_db(uid)
-        daily_averages = db.collection("weatherapi_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
-        stormglass_data = db.collection("stormglass_data").document(doc_id+"-"+session['currentUser']['uid']).get().to_dict()
-        soil_moisture = stormglass_data['hours'][1]['soilMoisture']['noaa']
-        soil_temperature = stormglass_data['hours'][1]['soilTemperature']['noaa']
-
-    
-        return render_template('dashboard.html', plants = matching_docs, daily_averages=daily_averages['daily_averages'], soil_moisture=soil_moisture, soil_temperature=soil_temperature, username=username)
-    except Exception as e:
-        return f"Error: {str(e)}", 500
-
-@app.route('/chatbot', methods=['GET'])
-def chatbot_page():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    return render_template('chatbot.html', username=username)
-
-@app.route('/chatbot', methods=['POST'])
-def chatbot_api():
-    data = request.get_json() 
-    question = data.get('question', '')
-    if not question.strip():
-        return jsonify({'response': 'Please ask a question!'})
-
-    bot_answer = chatbot_request(question)
-
-    return jsonify({'response': bot_answer})
-
-@app.route('/api/create_user', methods=['POST'])
-def create_user():
-    data = request.json
-    if not data:
-        return jsonify({"message": "No data provided"}), 400
-
-    uid = data.get('uid')
-    user_data = data.copy()
-    user_data[uid] = uid
-    db.collection('users').document(uid).set(user_data)
-    session['currentUser'] = user_data
-    api_to_db(uid)
-    return jsonify({"message": "User created successfully"}), 201
 
 @app.route("/signup", methods=["GET"])
 def signup():
-    if request.method == "GET":
-        try:
-            return render_template("login_signup.html", firebase_config=firebase_config, google_api_key=authfile['google']['apiKey'])
-        except Exception as e:
-            print(f"Error in signup route: {e}")
-            return f"Error loading signup page: {str(e)}", 500
+    return render_template("login_signup.html", firebase_config=firebase_config, google_api_key=GOOGLE_API_KEY)
 
-@app.route("/simple-signup", methods=["GET"])
-def simple_signup():
-    """Simple signup page without Firebase dependencies"""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>AgroAssistant - Sign Up</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-            .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            h1 { text-align: center; color: #6D9C4E; margin-bottom: 30px; }
-            .form-group { margin-bottom: 20px; }
-            label { display: block; margin-bottom: 5px; font-weight: bold; }
-            input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-            button { width: 100%; padding: 12px; background: #6D9C4E; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
-            button:hover { background: #5a8a3e; }
-            .links { text-align: center; margin-top: 20px; }
-            .links a { color: #6D9C4E; text-decoration: none; margin: 0 10px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🌱 AgroAssistant</h1>
-            <p style="text-align: center; color: #666; margin-bottom: 30px;">
-                Welcome to AgroAssistant! This is a test version without authentication.
-            </p>
-            <div class="links">
-                <a href="/">🏠 Home</a>
-                <a href="/test-dashboard">📊 Dashboard</a>
-                <a href="/test-plots">🗺️ Plots</a>
-                <a href="/test-statistics">📈 Statistics</a>
-                <a href="/test-profile">👤 Profile</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-        
-@app.route('/api/login_user', methods=['POST'])
+
+# ---------------------------------------------------------------------------
+# Authentication (server trusts only verified Firebase ID tokens)
+# ---------------------------------------------------------------------------
+
+def _clean_address(addr):
+    addr = addr if isinstance(addr, dict) else {}
+    return {k: str(addr.get(k, ""))[:200] for k in ("line1", "line2", "city", "state", "zip", "country")}
+
+
+def _clean_coords(coords):
+    try:
+        lat, lng = float(coords[0]), float(coords[1])
+        if -90 <= lat <= 90 and -180 <= lng <= 180:
+            return [lat, lng]
+    except (TypeError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _start_session(uid, user):
+    session.clear()
+    session["currentUser"] = {
+        "uid": uid,
+        "name": user.get("name", ""),
+        "email": user.get("email", ""),
+        "address": user.get("address", {}),
+    }
+
+
+@app.route("/api/create_user", methods=["POST"])
+def create_user():
+    decoded, data = verify_request_token()
+    if not decoded:
+        return jsonify({"message": "Invalid or missing ID token"}), 401
+    uid = decoded["uid"]
+
+    user = {
+        "uid": uid,
+        "name": str(data.get("name", ""))[:100],
+        "username": str(data.get("username", ""))[:100],
+        "email": decoded.get("email", ""),
+        "address": _clean_address(data.get("address")),
+    }
+    coords = _clean_coords(data.get("coordinates"))
+    if coords:
+        user["coordinates"] = coords
+
+    db.collection("users").document(uid).set(user, merge=True)
+    _start_session(uid, user)
+    try:
+        ensure_daily_data(uid, user)
+    except Exception:
+        log.exception("Initial data fetch failed")
+    return jsonify({"message": "User created successfully"}), 201
+
+
+@app.route("/api/login_user", methods=["POST"])
 def login_user():
-    data = request.json
-    if not data:
-        return jsonify({"message": "No data provided"}), 400
+    decoded, _ = verify_request_token()
+    if not decoded:
+        return jsonify({"message": "Invalid or missing ID token"}), 401
+    uid = decoded["uid"]
 
-    uid = data.get('uid')
-    user_data = db.collection('users').document(uid).get().to_dict()
-    user_data['uid'] = uid
-    session['currentUser'] = user_data
-    api_to_db(uid)
-    return jsonify({"message": "API to DB process completed!"}), 200
+    user = db.collection("users").document(uid).get().to_dict()
+    if not user:
+        return jsonify({"message": "Account profile not found. Please sign up again."}), 404
+    _start_session(uid, user)
+    try:
+        ensure_daily_data(uid, user)
+    except Exception:
+        log.exception("Daily data fetch failed at login")
+    return jsonify({"message": "Logged in"}), 200
 
-@app.route('/logout')
+
+@app.route("/logout")
 def logout():
-    session.pop('currentUser', None)
-    return redirect(url_for('signup'))
+    session.clear()
+    return redirect(url_for("signup"))
 
-@app.route('/crops/show-crops', methods=['GET'])
+
+# ---------------------------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------------------------
+
+@app.route("/dashboard")
+@login_required
+def index():
+    uid = current_uid()
+    try:
+        plants = user_plants(uid)[:4]
+        sg, wx = ensure_daily_data(uid)
+        hours = sg.get("hours") or [{}]
+        hour = hours[1] if len(hours) > 1 else hours[0]
+        soil_moisture = first_source(hour.get("soilMoisture"))
+        soil_temperature = first_source(hour.get("soilTemperature"))
+        daily = wx.get("daily_averages") or [{"UV": "--", "date": str(date.today()),
+                                               "averageTemperature": "--", "averageCloud": "--",
+                                               "averagePrecip": "--"}]
+        return render_template("dashboard.html", plants=plants, daily_averages=daily,
+                               soil_moisture=soil_moisture if soil_moisture is not None else "--",
+                               soil_temperature=soil_temperature if soil_temperature is not None else "--",
+                               username=username())
+    except Exception:
+        log.exception("Dashboard failed")
+        return "Something went wrong loading your dashboard. Please try again.", 500
+
+
+# ---------------------------------------------------------------------------
+# Chatbot
+# ---------------------------------------------------------------------------
+
+CHATBOT_INSTRUCTIONS = """
+You are AgriBot, an AI chatbot designed to serve only as an agricultural assistant. You can provide expert answers, guidance, and data related to agriculture, including:
+
+1. Crop Data: planting times, yield information, recommended seed varieties, soil nutrient needs, pest/disease management, harvesting guidelines, etc.
+2. Farming Practices: irrigation methods, sustainable farming, organic practices, use of pesticides and fertilizers, crop rotation, etc.
+3. Agricultural Economics: market trends, cost-benefit analysis of certain crops, yield projections, and similar topics.
+4. Agri-Tech: modern technologies like drones, sensors, or software solutions that help optimize crop production and farm management.
+
+Your only goal is to address questions in these agricultural domains. Ensure responses are 50 words or less and do not include markdown.
+"""
+
+
+@app.route("/chatbot", methods=["GET"])
+@login_required
+def chatbot_page():
+    return render_template("chatbot.html", username=username())
+
+
+@app.route("/chatbot", methods=["POST"])
+@api_login_required
+def chatbot_api():
+    data = request.get_json(silent=True) or {}
+    question = str(data.get("question", "")).strip()
+    if not question:
+        return jsonify({"response": "Please ask a question!"})
+    if len(question) > 1000:
+        return jsonify({"response": "Please keep questions under 1000 characters."}), 400
+    try:
+        return jsonify({"response": ask_openai(current_uid(), CHATBOT_INSTRUCTIONS, question)})
+    except QuotaExceeded:
+        return jsonify({"response": QUOTA_MSG}), 429
+    except Exception:
+        log.exception("Chatbot failed")
+        return jsonify({"response": "Sorry, something went wrong."}), 502
+
+
+# ---------------------------------------------------------------------------
+# Crops
+# ---------------------------------------------------------------------------
+
+def render_crops(error=None, status=200):
+    return render_template("crops.html", matching_docs=user_plants(current_uid()),
+                           error=error, username=username()), status
+
+
+@app.route("/crops/show-crops", methods=["GET"])
+@login_required
 def crops_page():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    uid = session['currentUser']['uid']
-    collection_ref = db.collection('plant_data')
-    documents = collection_ref.list_documents()
-    matching_docs = []
-    for doc in documents:
-        doc_name = doc.id
-        if uid in doc_name:
-            matching_docs.append(doc.get().to_dict())
-    return render_template('crops.html', matching_docs=matching_docs, username=username)
+    return render_crops()
 
-@app.route('/crops', methods=['POST'])
+
+@app.route("/crops", methods=["POST"])
+@login_required
 def crops_api():
+    uid = current_uid()
+    plant_name = request.form.get("plant_name", "").strip()
+    if not plant_name:
+        return render_crops("Plant name cannot be empty.", 400)
+    if len(plant_name) > 100:
+        return render_crops("Plant name is too long.", 400)
+
     try:
-        plant_name = request.form['plant_name']
-        if not plant_name.strip():
-            error_message = "Plant name cannot be empty."
-            return render_template("crops.html", error=error_message, username=username)
+        data = lookup_plant(plant_name)
+        if not data or not data.get("slug"):
+            return render_crops(f"Could not find data for plant: {plant_name}", 404)
+        if plant_ref_for(uid, data["slug"]):
+            return render_crops(f"{plant_name} is already in your crops.", 409)
 
-        plant_id = plant_name.lower().replace(' ', '-')
-
-        name = plant_id+"-"+session['currentUser']['uid']
-        for doc in db.collection('plant_data').list_documents():
-            if name == doc.id:
-                error_message = f"Plant: {plant_name} already exists in the database."
-                return render_template("crops.html", error=error_message, username=username)
-
-        plant_data = get_plant(plant_id)
-
-        if 'error' in plant_data or 'data' not in plant_data:
-            error_message = f"Could not fetch data for plant: {plant_name}"
-            return render_template("crops.html", error=error_message, username=username)
-        
-        data = plant_data['data']
-        extracted_data = {
-            "common_name": data.get("common_name", "Unknown"),
-            "scientific_name": data.get("scientific_name", "Unknown"),
-            "image_url": data.get("image_url", ""),
-            "slug": data.get("slug", ""),
-            "uid": session['currentUser']['uid'],  
+        plant = {
+            "common_name": data.get("common_name") or "Unknown",
+            "scientific_name": data.get("scientific_name") or "Unknown",
+            "image_url": data.get("image_url") or "",
+            "slug": data["slug"],
+            "uid": uid,
         }
+        try:
+            plant["description"] = ask_openai(
+                uid,
+                "I will provide a plant's scientific name and you are to provide a brief description "
+                "of the plant along with some basic care tips in under 50 words.",
+                plant["scientific_name"])
+        except QuotaExceeded:
+            plant["description"] = ""
+        db.collection("plant_data").document(f"{plant['slug']}-{uid}").set(plant)
+        return redirect(url_for("crops_page"))
+    except Exception:
+        log.exception("crops_api failed")
+        return render_crops("Something went wrong adding that plant. Please try again.", 500)
 
-        client = OpenAI(api_key=authfile['openAI']['apiKey'])
-        instructions = "I will provide a plant's scientific name and you are to provide a brief description of the plant along with some basic care tips in under 50 words."
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": instructions},
-                {
-                    "role": "user",
-                    "content": extracted_data['scientific_name']
-                }
-            ]
-        )
-        response = dict(completion.choices[0].message)
-        response = response['content']
-        extracted_data['description'] = response
-        doc_name = f"{extracted_data['slug']}-{extracted_data['uid']}"
 
-        db.collection('plant_data').document(doc_name).set(extracted_data)
-
-        return redirect(url_for('crops_page'))
-
-    except Exception as e:
-        print(f"Error in crops_api: {e}")
-        return jsonify({"error": str(e)}), 500
-    
-@app.route('/api/add_irrigation', methods=['POST'])
+@app.route("/api/add_irrigation", methods=["POST"])
+@api_login_required
 def add_irrigation():
-    data = request.json
-    if not data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "forPlant" not in data:
         return jsonify({"message": "No data provided"}), 400
-    
-    try:
-        for_plant_slug = data['forPlant']
+    ref = plant_ref_for(current_uid(), data["forPlant"])
+    if not ref:
+        return jsonify({"message": "Matching plant not found"}), 404
+    entry = {k: data[k] for k in list(data)[:20] if isinstance(k, str) and len(k) <= 50}
+    ref.update({"irrigations": firestore.ArrayUnion([entry])})
+    return jsonify({"message": "Irrigation added successfully"}), 201
 
-        uid = session['currentUser']['uid']
-        collection_ref = db.collection('plant_data')
-        documents = collection_ref.list_documents()
 
-        matching_docs = []
-        for doc in documents:
-            doc_name = doc.id
-            print("Checking document:", doc_name)
-            if uid in doc_name:
-                matching_docs.append(doc)
-
-        plant_ref = None
-
-        for doc in matching_docs:
-            doc_snapshot = doc.get()
-            doc_data = doc_snapshot.to_dict()
-            if doc_data and doc_data.get('slug') == for_plant_slug:
-                plant_ref = doc
-                break
-
-        if not plant_ref:
-            return jsonify({"message": "Matching plant not found"}), 404
-
-        plant_ref.update({
-            'irrigations': firestore.ArrayUnion([data])
-        })
-        return jsonify({"message": "Irrigation added successfully"}), 201
-
-    except Exception as e:
-        print("no gotead", str(e))
-        return jsonify({"message": f"An error occurred: {str(e)}"}), 500
-
-@app.route('/api/get_crop_data', methods=['GET'])
+@app.route("/api/get_crop_data", methods=["GET"])
+@api_login_required
 def get_crop_data():
-    try:
+    return jsonify(user_plants(current_uid())), 200
 
-        uid = session['currentUser']['uid']
-        collection_ref = db.collection('plant_data')
-        documents = collection_ref.list_documents()
-        matching_docs = []
-        for doc in documents:
-            doc_name = doc.id
-            if uid in doc_name:
-                matching_docs.append(doc.get().to_dict())
 
-        return jsonify(matching_docs), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/update_crop_data', methods=['POST'])
+@app.route("/api/update_crop_data", methods=["POST"])
+@api_login_required
 def update_crop_data():
-    data = request.json
-    if not data or 'slug' not in data:
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or "slug" not in data:
         return jsonify({"message": "Invalid data"}), 400
-
-    slug = data['slug']
-    water_cost = data['waterCost']
-    field_area = data['fieldArea']
-    crop_density = data['cropDensity']
-
-    plant_ref = findPlantWithSlug(slug)
-
-    if not plant_ref:
+    try:
+        updates = {
+            "fieldArea": float(data["fieldArea"]),
+            "cropDensity": float(data["cropDensity"]),
+            "waterCost": float(data["waterCost"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"message": "fieldArea, cropDensity and waterCost must be numbers"}), 400
+    ref = plant_ref_for(current_uid(), data["slug"])
+    if not ref:
         return jsonify({"message": "Plant not found"}), 404
-
-
-    plant_ref.update({
-        'fieldArea': field_area,
-        'cropDensity': crop_density,
-        'waterCost' : water_cost
-    })
-
+    ref.update(updates)
     return jsonify({"message": "Crop data updated successfully"}), 200
 
-@app.route('/profile', methods=['GET', 'POST'])
-def profile():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    uid = session['currentUser']['uid']
-    user_data = db.collection('users').document(uid).get().to_dict()
-    name = user_data['name']
-    email = user_data['email']
-    line1 = user_data['address']['line1']
-    line2 = user_data['address']['line2']
-    city = user_data['address']['city']
-    country = user_data['address']['country']
-    state = user_data['address']['state']
-    zip = user_data['address']['zip']
-    if request.method == 'POST':
-        name = request.form['name']
-        email = request.form['email']
-        line1 = request.form['line1']
-        line2 = request.form['line2']
-        city = request.form['city']
-        country = request.form['country']
-        state = request.form['state']
-        zip = request.form['zip']
-        address = {
-            'city': city,
-            'country': country,
-            'line1': line1,
-            'line2': line2,
-            'state': state,
-            'zip': zip
-        }
-        user_data = {
-            'name': name,
-            'email': email,
-            'address': address,
-        }
-        db.collection('users').document(uid).set(user_data)
-        
-        session['currentUser']['address'] = address
-        session['currentUser']['name'] = name
-        session['currentUser']['email'] = email
 
-        return redirect(url_for('profile'))
-    return render_template('profile.html', name=name, email=email, city=city, country=country, state=state, zip=zip, line1=line1, line2=line2, username=username)
-
-def findPlantWithSlug(slug):
-    uid = session['currentUser']['uid']
-    collection_ref = db.collection('plant_data')
-    documents = collection_ref.list_documents()
-
-    matching_docs = []
-
-    for doc in documents:
-        doc_name = doc.id
-        print("Checking document:", doc_name)
-        if uid in doc_name:
-            matching_docs.append(doc)
-
-    plant_ref = None
-
-
-    for doc in matching_docs:
-        doc_snapshot = doc.get() 
-        doc_data = doc_snapshot.to_dict()  
-        if doc_data and doc_data.get('slug') == slug:
-            return doc
-        
 @app.route("/api/growing_conditions", methods=["POST"])
+@api_login_required
 def growing_conditions():
-    data = request.json
-    if not data or 'plantName' not in data:
-        return jsonify({"message": "Invalid data provided"}), 400
+    uid = current_uid()
+    data = request.get_json(silent=True) or {}
+    ref = plant_ref_for(uid, data.get("plantName"))
+    if not ref:
+        return jsonify({"message": "Plant not found"}), 404
 
-    plant_name = data['plantName']
-    uid = session.get('currentUser', {}).get('uid')
-
-    plant_doc_ref = db.collection('plant_data').document(f'{plant_name}-{uid}')
-    plant_doc = plant_doc_ref.get()
+    plant = ref.get().to_dict() or {}
+    today = str(date.today())
+    if plant.get("growth_score") is not None and plant.get("date") == today:
+        return jsonify({"growth_score": plant["growth_score"]}), 200
 
     try:
-        score = plant_doc.get('growth_score')
-    except:
-        score = None
-
-    if score is None:
-        api_id = f"{date.today()}-{uid}"
-
-        stormglass_doc = db.collection('stormglass_data').document(api_id).get()
-        weather_doc = db.collection('weatherapi_data').document(api_id).get()
-
-        stormglass_data = stormglass_doc.to_dict() 
-        hours_data = stormglass_data.get('hours', [{}])
-
-        conditions = {
-            'soilMoisture': hours_data[0].get('soilMoisture', {}).get('sg', 0.0),
-            #'soilTemp': hours_data[0].get('soilTemperature', {}).get('sg', 0.0),
-        }
-
-        weather_data = weather_doc.to_dict()
-        daily_averages = weather_data.get('daily_averages', [{}])
-
-        conditions.update({
-            'avgCloud': daily_averages[0].get('averageCloud', 0.0),
-            'avgPrecip': daily_averages[0].get('averagePrecip', 0.0),
-            'avgTemp': daily_averages[0].get('averageTemperature', 0.0),
-        })
-
-        client = OpenAI(api_key=authfile['openAI']['apiKey'])
-        instructions = "I will provide today's current soil and weather conditions, as well as a plant name. You must determine how well the plant can grow under these conditions, and return a score from 0 to 100. Try to keep the score on the higher end, only give bad score if the conditions are very poor. Only return the score number value, no other text at all."
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": instructions},
-                {"role": "user", "content": f"Plant: {plant_name}, Conditions: {json.dumps(conditions)}"}
-            ]
-        )
-        response = dict(completion.choices[0].message)['content']
-        score = float(response.strip())
-
-        plant_doc_ref.set({
-            'growth_score': score,
-            'date': str(date.today())
-        }, merge=True)
-
+        reply = ask_openai(
+            uid,
+            "I will provide today's current soil and weather conditions, as well as a plant name. You must "
+            "determine how well the plant can grow under these conditions, and return a score from 0 to 100. "
+            "Try to keep the score on the higher end, only give bad score if the conditions are very poor. "
+            "Only return the score number value, no other text at all.",
+            f"Plant: {plant.get('scientific_name', data.get('plantName'))}, "
+            f"Conditions: {json.dumps(current_conditions(uid))}")
+    except QuotaExceeded:
+        return jsonify({"message": QUOTA_MSG}), 429
+    match = re.search(r"\d+(\.\d+)?", reply)
+    if not match:
+        return jsonify({"message": "Could not compute a score"}), 502
+    score = max(0.0, min(100.0, float(match.group())))
+    ref.set({"growth_score": score, "date": today}, merge=True)
     return jsonify({"growth_score": score}), 200
 
-@app.route('/diagnosis', methods=['GET', 'POST'])
-def diagnosis():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
+
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
+
+def geocode_address(address):
+    """Best-effort server-side geocoding (OpenStreetMap Nominatim). Returns [lat, lng] or None."""
+    try:
+        from geopy.geocoders import Nominatim
+        query = ", ".join(v for v in (address.get("line1"), address.get("city"), address.get("state"),
+                                      address.get("zip"), address.get("country")) if v)
+        loc = Nominatim(user_agent="agroassistant").geocode(query, timeout=5)
+        return [loc.latitude, loc.longitude] if loc else None
+    except Exception:
+        log.exception("Geocoding failed")
+        return None
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    uid = current_uid()
+    user_ref = db.collection("users").document(uid)
+    user = user_ref.get().to_dict() or {}
+
     if request.method == "POST":
-        if "plant" not in request.files:
-            return render_template("diagnosis.html", error="No Image Provided", username=username)
+        address = _clean_address(request.form)
+        updates = {
+            "name": request.form.get("name", "")[:100],
+            "email": request.form.get("email", "")[:200],
+            "address": address,
+        }
+        if address != user.get("address"):
+            coords = geocode_address(address)
+            if coords:
+                updates["coordinates"] = coords
+            # today's cached weather/soil was for the old address — refetch on next load
+            for col in ("stormglass_data", "weatherapi_data"):
+                db.collection(col).document(f"{date.today()}-{uid}").delete()
 
-        plant_pic = request.files["plant"]
+        user_ref.set(updates, merge=True)  # merge keeps coordinates, username, etc.
+        session["currentUser"] = {**session["currentUser"], **{k: updates[k] for k in ("name", "email", "address")}}
+        return redirect(url_for("profile"))
 
-        if plant_pic.filename == '':
-            return "No selected file"
-        
-        if plant_pic:
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], plant_pic.filename)
-            plant_pic.save(file_path)
-            with open(file_path, 'rb') as image_file:
-                image_data = image_file.read()
+    addr = user.get("address") or {}
+    return render_template("profile.html", name=user.get("name", ""), email=user.get("email", ""),
+                           city=addr.get("city", ""), country=addr.get("country", ""), state=addr.get("state", ""),
+                           zip=addr.get("zip", ""), line1=addr.get("line1", ""), line2=addr.get("line2", ""),
+                           username=username())
 
-            image_data = base64.b64encode(image_data).decode('utf-8')
-            image_data = f"data:image/jpg;base64,{image_data}"
 
-            base_url = "https://plant.id/api/v3/health_assessment?details=local_name,description,url,treatment,classification,common_names,cause"
+# ---------------------------------------------------------------------------
+# Diagnosis (image never touches disk — works on Vercel's read-only filesystem)
+# ---------------------------------------------------------------------------
 
-            user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
-            location = user['coordinates']
-            payload = {
-                "images": [image_data],
-                "latitude": location[0],
-                "longitude": location[1],
-            }
+def prepare_image(file_storage):
+    """Validate the upload is a real image, downscale it, and return a JPEG data URI."""
+    raw = file_storage.read()
+    try:
+        Image.open(io.BytesIO(raw)).verify()
+        img = Image.open(io.BytesIO(raw))
+        img = img.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+    img.thumbnail((1500, 1500))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
 
-            headers = {
-                "Api-Key": authfile["diagnosisApi"]["apiKey"],
-                "Content-Type": "application/json",
-            }
 
-            response = requests.post(base_url, headers=headers, json=payload)
-            data = json.loads(response.text)
-            suggestions = data["result"]["disease"]["suggestions"]
+@app.route("/diagnosis", methods=["GET", "POST"])
+@login_required
+def diagnosis():
+    if request.method == "GET":
+        return render_template("diagnosis.html", username=username())
 
-            most_probable = max(suggestions, key=lambda s: s["probability"])
+    upload = request.files.get("plant")
+    if not upload or not upload.filename:
+        return render_template("diagnosis.html", error="No image provided.", username=username()), 400
+    image_uri = prepare_image(upload)
+    if not image_uri:
+        return render_template("diagnosis.html", error="That file isn't a supported image (try JPG or PNG).",
+                               username=username()), 400
 
-            disease_name = most_probable["name"]
-            description = most_probable["details"]["description"]
-            treatment_info = most_probable["details"]["treatment"]
+    user = db.collection("users").document(current_uid()).get().to_dict() or {}
+    lat, lng = user_coords(user)
+    try:
+        resp = requests.post(
+            "https://plant.id/api/v3/health_assessment"
+            "?details=local_name,description,url,treatment,classification,common_names,cause",
+            headers={"Api-Key": PLANT_ID_API_KEY, "Content-Type": "application/json"},
+            json={"images": [image_uri], "latitude": lat, "longitude": lng},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        suggestions = resp.json().get("result", {}).get("disease", {}).get("suggestions") or []
+    except Exception:
+        log.exception("Plant.id request failed")
+        return render_template("diagnosis.html", error="Diagnosis service is unavailable right now.",
+                               image_url=image_uri, username=username()), 502
 
-        return render_template('diagnosis.html', disease=disease_name, description=description, bio_treatment=treatment_info.get("biological", []), chem_treatment=treatment_info.get("chemical", []), preventative_treatment=treatment_info.get("prevention", []), image_url = file_path, username=username)
-    return render_template('diagnosis.html', username=username)
+    if not suggestions:
+        return render_template("diagnosis.html", disease="No disease detected",
+                               description="We couldn't identify a disease in this photo.",
+                               image_url=image_uri, username=username())
 
-@app.route('/calendar')
+    best = max(suggestions, key=lambda s: s.get("probability", 0))
+    details = best.get("details") or {}
+    treatment = details.get("treatment") or {}
+    return render_template("diagnosis.html", disease=best.get("name"), description=details.get("description"),
+                           bio_treatment=treatment.get("biological", []),
+                           chem_treatment=treatment.get("chemical", []),
+                           preventative_treatment=treatment.get("prevention", []),
+                           image_url=image_uri, username=username())
+
+
+# ---------------------------------------------------------------------------
+# Calendar / schedule
+# ---------------------------------------------------------------------------
+
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+AI_EVENT_TYPES = {"Irrigate", "Fertilize", "Plant", "Harvest", "Prune", "Checkup"}
+
+
+def clean_event(raw, allow_custom_type=True):
+    """Validate an event dict. Returns a clean dict or raises ValueError."""
+    if not isinstance(raw, dict):
+        raise ValueError("event must be an object")
+    ev_date = str(raw.get("date", ""))
+    if not DATE_RE.match(ev_date):
+        raise ValueError("date must be YYYY-MM-DD")
+    datetime.strptime(ev_date, "%Y-%m-%d")
+    ev_type = str(raw.get("type", "")).strip()[:50]
+    if not ev_type or (not allow_custom_type and ev_type not in AI_EVENT_TYPES):
+        raise ValueError("invalid event type")
+    event = {
+        "date": ev_date,
+        "type": ev_type,
+        # the calendar form sends the plot as 'plant'; statistics and the calendar read 'plot'
+        "plot": str(raw.get("plot") or raw.get("plant") or "")[:100],
+        "notes": str(raw.get("notes", ""))[:500],
+    }
+    if ev_type == "Irrigate":
+        event["inches"] = float(raw["inches"])
+    elif ev_type == "Fertilize":
+        event["fert"] = float(raw["fert"])
+        event["npk"] = str(raw.get("npk", ""))[:20]
+    elif ev_type == "Harvest":
+        event["yield"] = float(raw["yield"])
+    return event
+
+
+@app.route("/calendar")
+@login_required
 def calendar():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    return render_template('calendar.html', username=username)
+    return render_template("calendar.html", username=username())
 
 
-@app.route('/api/get_schedule', methods=['GET', 'POST'])
+@app.route("/api/get_schedule", methods=["GET"])
+@api_login_required
 def get_schedule():
-    uid = session.get('currentUser', {}).get('uid')
-    if not uid:
-        return jsonify([]), 401  # Unauthorized
-
-    events_ref = db.collection('users').document(uid).collection('schedule')
-    docs = events_ref.stream()
-
-    schedule = [doc.to_dict() for doc in docs]
-
-    docs = db.collection('users').document(uid).collection('plots').stream()
-    plots = {doc.to_dict()['plot_name']: doc.to_dict() for doc in docs}
-    
-    result = {
-        'schedule' : schedule,
-        'plots' : plots
-    }
-
-    return jsonify(result)
+    uid = current_uid()
+    schedule = []
+    for doc in db.collection("users").document(uid).collection("schedule").stream():
+        ev = doc.to_dict() or {}
+        ev.setdefault("plot", ev.get("plant"))  # legacy events stored the plot under 'plant'
+        schedule.append(ev)
+    return jsonify({"schedule": schedule, "plots": user_plots(uid)})
 
 
-
-
-@app.route('/api/add_event', methods=['GET', 'POST'])
+@app.route("/api/add_event", methods=["POST"])
+@api_login_required
 def add_event():
-    raw = request.json
-    uid = session.get('currentUser', {}).get('uid')
-
-    if uid:
-        event = {
-            'date' : raw['date'],
-            'type' : raw['type'],
-            'plant' : raw['plant'],
-            'notes' : raw.get('notes', ''),
-        }
-
-        if raw['type'] == 'Irrigate':
-            event['inches'] = float(raw['inches'])
-        elif raw['type'] == 'Fertilize':
-            event['fert'] = float(raw['fert'])
-            event['npk'] = raw['npk']
-        elif raw['type'] == 'Harvest':
-            event['yield'] = float(raw['yield'])
-        db.collection('users').document(uid).collection('schedule').document().set(event)
-
-        # user = session.get('currentUser', {})
-        # schedule = user.get('schedule', [])
-        # schedule.append(data)
-        # user['schedule'] = schedule
-        # session['currentUser'] = user
-
-        # print(user)
-
-        return jsonify({"success": True}), 200
-    else:
-        return jsonify({"error": "User not logged in"}), 401
-    
-@app.route('/api/clear_schedule', methods=['POST'])
-def clear_schedule():
-    uid = session.get('currentUser', {}).get('uid')
-    if not uid:
-        return jsonify({"error": "User not logged in"}), 401
-
-    schedule_ref = db.collection('users').document(uid).collection('schedule')
-    docs = schedule_ref.stream()
-    for doc in docs:
-        doc.reference.delete()
-
-    # Optional: clear session-stored schedule as well
-    # user = session.get('currentUser', {})
-    # user['schedule'] = []
-    # session['currentUser'] = user
-
+    try:
+        event = clean_event(request.get_json(silent=True))
+    except (ValueError, KeyError, TypeError) as e:
+        return jsonify({"error": f"Invalid event: {e}"}), 400
+    db.collection("users").document(current_uid()).collection("schedule").document().set(event)
     return jsonify({"success": True}), 200
-    
-@app.route('/api/AI_schedule', methods=['GET', 'POST'])
+
+
+@app.route("/api/clear_schedule", methods=["POST"])
+@api_login_required
+def clear_schedule():
+    batch, n = db.batch(), 0
+    for doc in db.collection("users").document(current_uid()).collection("schedule").stream():
+        batch.delete(doc.reference)
+        n += 1
+        if n % 400 == 0:
+            batch.commit()
+            batch = db.batch()
+    batch.commit()
+    return jsonify({"success": True}), 200
+
+
+@app.route("/api/AI_schedule", methods=["POST"])
+@api_login_required
 def AI_schedule():
-    uid = session['currentUser']['uid']
-    plots = {}
-    plot_data = db.collection('users').document(uid).collection('plots').stream()
-    for doc in plot_data:
-        plot = doc.to_dict()
-        plots[plot['plot_name']] = {
-            'plants': plot['crop'],
-            'idealValues': plot['idealValues']
-        }
-    api_id = f"{date.today()}-{uid}"
+    uid = current_uid()
+    plots = {name: {"plants": p.get("crop", []), "idealValues": p.get("idealValues", {})}
+             for name, p in user_plots(uid).items()}
+    if not plots:
+        return jsonify({"error": "Add a plot first so the schedule has something to plan for."}), 400
 
-    stormglass_doc = db.collection('stormglass_data').document(api_id).get()
-    weather_doc = db.collection('weatherapi_data').document(api_id).get()
-
-    stormglass_data = stormglass_doc.to_dict() 
-    hours_data = stormglass_data.get('hours', [{}])
-
-    conditions = {
-        'soilMoisture': hours_data[0].get('soilMoisture', {}).get('sg', 0.0),
-        #'soilTemp': hours_data[0].get('soilTemperature', {}).get('sg', 0.0),
-    }
-
-    weather_data = weather_doc.to_dict()
-    daily_averages = weather_data.get('daily_averages', [{}])
-
-    conditions.update({
-        'avgCloud': daily_averages[0].get('averageCloud', 0.0),
-        'avgPrecip': daily_averages[0].get('averagePrecip', 0.0),
-        'avgTemp': daily_averages[0].get('averageTemperature', 0.0),
-    })
-    
-    client = OpenAI(api_key=authfile['openAI']['apiKey'])
     instructions = """
-    Using the provided plots, crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup. 
+    Using the provided plots, crops, address, weather, and soil data, generate a 1-month farm schedule with events in these categories: Irrigate, Fertilize, Plant, Harvest, Prune, and Checkup.
     Tailor the plan to the specific crops and conditions for each plot, with at least 10 events in total.
 
     Return a JSON object with a 'schedule' field containing an array of event objects. Each event must include:
@@ -896,210 +928,137 @@ def AI_schedule():
 
     Only include fields relevant to the event type. No explanation, just the JSON output.
     """
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": f"Plots: {plots}, Address: {session['currentUser']['address']}, Conditions: {json.dumps(conditions)}, Current Date: {date.today()}"}
-        ],
-        response_format={ "type": "json_object" }
-    )
+    try:
+        reply = ask_openai(
+            uid, instructions,
+            f"Plots: {json.dumps(plots)}, Address: {json.dumps(session['currentUser'].get('address', {}))}, "
+            f"Conditions: {json.dumps(current_conditions(uid))}, Current Date: {date.today()}",
+            json_mode=True)
+        raw_events = json.loads(reply).get("schedule", [])
+    except QuotaExceeded:
+        return jsonify({"error": QUOTA_MSG}), 429
+    except Exception:
+        log.exception("AI schedule failed")
+        return jsonify({"error": "Could not generate a schedule. Please try again."}), 502
 
-    response = dict(completion.choices[0].message)['content']
+    schedule = []
+    for raw in raw_events[:60]:
+        try:
+            ev = clean_event(raw, allow_custom_type=False)
+        except (ValueError, KeyError, TypeError):
+            continue  # drop malformed events from the model
+        if ev["plot"] in plots:
+            schedule.append(ev)
 
-    # Reference user schedule in Firestore
-    user_schedule_ref = db.collection('users').document(uid).collection('schedule')
-
-    schedule = json.loads(response)['schedule']
-
-    # Store each event
-    for event in schedule:
-        user_schedule_ref.add(event)  # Firestore auto-generates document ID
-
+    batch = db.batch()
+    col = db.collection("users").document(uid).collection("schedule")
+    for ev in schedule:
+        batch.set(col.document(), ev)
+    batch.commit()
     return jsonify(schedule)
-  
-def calculate_acres(ne_lat, ne_long, sw_lat, sw_long):
-    # Earth's radius in meters
-    R = 6371000
-    
-    # Convert coordinates to radians
-    ne_lat_rad = radians(float(ne_lat))
-    ne_long_rad = radians(float(ne_long))
-    sw_lat_rad = radians(float(sw_lat))
-    sw_long_rad = radians(float(sw_long))
-    
-    # Calculate the distance between points
-    dlat = ne_lat_rad - sw_lat_rad
-    dlong = ne_long_rad - sw_long_rad
-    
-    # Calculate the area using the Haversine formula
-    a = sin(dlat/2)**2 + cos(sw_lat_rad) * cos(ne_lat_rad) * sin(dlong/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    distance = R * c
-    
-    # Calculate width and height
-    width = distance * cos(sw_lat_rad)  # Width at the latitude
-    height = distance  # Height is the direct distance
-    
-    # Calculate area in square meters
-    area_sqm = width * height
-    
-    # Convert square meters to acres (1 acre = 4046.86 square meters)
-    acres = area_sqm / 4046.86
-    
-    return round(acres, 2)
 
-@app.route('/plots', methods=["GET"])
+
+# ---------------------------------------------------------------------------
+# Plots
+# ---------------------------------------------------------------------------
+
+@app.route("/plots", methods=["GET"])
+@login_required
 def show_plots():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    user = db.collection("users").document(session['currentUser']['uid']).get().to_dict()
-    uid = session['currentUser']['uid']
-    location = user['coordinates']
-    lat, long = location[0], location[1]
-    user_plants = []
-    for doc in db.collection("plant_data").list_documents():
-        doc_name = doc.id
-        if uid in doc_name:
-            user_plants.append(doc.get().to_dict())
-
-    plot_list = []
-    for doc in db.collection("users").document(session['currentUser']['uid']).collection("plots").list_documents():
-        plot_list.append(doc.get().to_dict())
-
-    return render_template('plots.html', key=authfile['maps']['apiKey'], lat=lat, long=long, user_plants=user_plants, plots=plot_list, username=username)
+    uid = current_uid()
+    user = db.collection("users").document(uid).get().to_dict() or {}
+    lat, lng = user_coords(user)
+    return render_template("plots.html", key=GOOGLE_MAPS_API_KEY, lat=lat, long=lng,
+                           user_plants=user_plants(uid), plots=list(user_plots(uid).values()),
+                           username=username())
 
 
-@app.route('/plots', methods=['POST'])
+@app.route("/plots", methods=["POST"])
+@api_login_required
 def save_plots():
-    plot_name = request.form.get("field-name")
-    crop = request.form.getlist("crop-type")
-    sw_lat = request.form.get("sw_lat")
-    sw_long = request.form.get("sw_long")
-    ne_lat = request.form.get('ne_lat')
-    ne_long = request.form.get("ne_long")
+    uid = current_uid()
+    plot_name = (request.form.get("field-name") or "").strip()
+    crops = [c[:100] for c in request.form.getlist("crop-type")][:20]
+    if not valid_plot_name(plot_name):
+        return jsonify({"error": "Plot name must be 1–100 characters and cannot contain '/'."}), 400
+    try:
+        coords = {k: float(request.form.get(k)) for k in ("sw_lat", "sw_long", "ne_lat", "ne_long")}
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid plot coordinates."}), 400
+
+    plot = {"crop": crops, "plot_name": plot_name, **coords}
+
     polygon_path = request.form.get("polygon_path")
-
-
-    client = OpenAI(api_key=authfile['openAI']['apiKey'])
-    instructions = """
-    Given the location and different plants on a plot of land, return the ideal inches of water, 
-    pounds/acre of fertilizer, and NPK ratio the overall plot needs on average each irrigation/fertilization. 
-    Ensure the ideal values are based on each plant's needs.
-    Return a JSON object with fields:
-    - idealIrrigationPerWeek (number of inches of water)
-    - idealFertilizerPerWeek (number of pounds/acre of fertilizer)
-    - idealNPKPerWeek (NPK ratio formatted as 'XX-XX-XX')
-    """
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": instructions},
-            {"role": "user", "content": f"Plants: {crop}, Address: {session['currentUser']['address']}"}
-        ],
-        response_format={ "type": "json_object" }
-    )
-
-    raw = dict(completion.choices[0].message)['content']
-    
-    plant_data = {
-        'crop': crop,
-        'plot_name': plot_name,
-        'sw_lat': sw_lat,
-        'sw_long': sw_long,
-        'ne_lat': ne_lat,
-        'ne_long': ne_long,
-        'acres': calculate_acres(ne_lat, ne_long, sw_lat, sw_long),
-        'idealValues': json.loads(raw)
-    }
-    
-    # Add polygon path if provided
     if polygon_path:
         try:
-            polygon_coords = json.loads(polygon_path)
-            # Convert to Firestore-compatible format (array of objects instead of nested arrays)
-            plant_data['polygon_path'] = [
-                {'lat': coord[0], 'lng': coord[1]} 
-                for coord in polygon_coords
-            ]
-        except json.JSONDecodeError:
-            # If polygon_path is invalid JSON, ignore it
-            pass
-    
-    db.collection("users").document(session['currentUser']['uid']).collection("plots").document(plot_name).set(plant_data)
+            pts = json.loads(polygon_path)
+            plot["polygon_path"] = [{"lat": float(p[0]), "lng": float(p[1])} for p in pts][:500]
+        except (json.JSONDecodeError, TypeError, ValueError, IndexError):
+            pass  # ignore a malformed polygon; the bounding box is still saved
+    plot["acres"] = plot_acres(plot)
 
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return jsonify({ 'message': 'Plot saved' })
-    else:
-        return redirect(url_for('show_plots'))
-    
-@app.route('/api/delete_plot', methods=['POST'])
+    try:
+        reply = ask_openai(
+            uid,
+            """Given the location and different plants on a plot of land, return the ideal inches of water,
+            pounds/acre of fertilizer, and NPK ratio the overall plot needs on average each irrigation/fertilization.
+            Ensure the ideal values are based on each plant's needs.
+            Return a JSON object with fields:
+            - idealIrrigationPerWeek (number of inches of water)
+            - idealFertilizerPerWeek (number of pounds/acre of fertilizer)
+            - idealNPKPerWeek (NPK ratio formatted as 'XX-XX-XX')""",
+            f"Plants: {json.dumps(crops)}, Address: {json.dumps(session['currentUser'].get('address', {}))}",
+            json_mode=True)
+        plot["idealValues"] = json.loads(reply)
+    except QuotaExceeded:
+        return jsonify({"error": QUOTA_MSG}), 429
+    except Exception:
+        log.exception("Ideal values lookup failed")
+        plot["idealValues"] = {}
+
+    db.collection("users").document(uid).collection("plots").document(plot_name).set(plot)
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"message": "Plot saved"})
+    return redirect(url_for("show_plots"))
+
+
+@app.route("/api/delete_plot", methods=["POST"])
+@api_login_required
 def delete_plot():
-    plot_name = request.json.get("plot_name")
-    uid = session['currentUser']['uid']
-    db.collection("users").document(uid).collection("plots").document(plot_name).delete()
-    return jsonify({ 'message': 'Plot deleted' })
+    plot_name = (request.get_json(silent=True) or {}).get("plot_name")
+    if not valid_plot_name(plot_name):
+        return jsonify({"message": "Invalid plot name"}), 400
+    db.collection("users").document(current_uid()).collection("plots").document(plot_name).delete()
+    return jsonify({"message": "Plot deleted"})
 
-@app.route('/statistics')
+
+# ---------------------------------------------------------------------------
+# Statistics
+# ---------------------------------------------------------------------------
+
+@app.route("/statistics")
+@login_required
 def statistics():
-    if "currentUser" in session:
-        username = session["currentUser"]['name']
-    else:
-        return redirect(url_for("signup"))
-    return render_template('statistics.html', username=username)
+    return render_template("statistics.html", username=username())
 
-@app.route('/api/get_statistics_data', methods=['GET', 'POST'])
+
+@app.route("/api/get_statistics_data", methods=["GET"])
+@api_login_required
 def get_irrigations():
-    uid = session.get('currentUser', {}).get('uid')
-    data = {
-        'irrigations' : {},
-        'fertilizers' : {},
-        'harvests' : {}
-    }
-    
-    docs = db.collection('users').document(uid).collection('schedule').stream()
-    
-    for doc in docs:
-        event = doc.to_dict()
-        plot = event.get('plot')
-        
-        # Skip events that don't have a valid plot name
-        if not plot or plot is None:
-            continue
-            
-        if event.get('type') == 'Irrigate':
-            if plot in data['irrigations'].keys():
-                data['irrigations'][plot].append(event)
-            else:
-                data['irrigations'][plot] = [event]
-        elif event.get('type') == 'Fertilize':
-            if plot in data['fertilizers'].keys():
-                data['fertilizers'][plot].append(event)
-            else:
-                data['fertilizers'][plot] = [event]
-        elif event.get('type') == 'Harvest':
-            if plot in data['harvests'].keys():
-                data['harvests'][plot].append(event)
-            else:
-                data['harvests'][plot] = [event]
+    uid = current_uid()
+    buckets = {"Irrigate": "irrigations", "Fertilize": "fertilizers", "Harvest": "harvests"}
+    data = {v: {} for v in buckets.values()}
+    for doc in db.collection("users").document(uid).collection("schedule").stream():
+        event = doc.to_dict() or {}
+        plot = event.get("plot") or event.get("plant")  # legacy events used 'plant'
+        bucket = buckets.get(event.get("type"))
+        if plot and bucket:
+            data[bucket].setdefault(plot, []).append(event)
+    return jsonify({"schedule": data, "plots": user_plots(uid)})
 
-    docs = db.collection('users').document(uid).collection('plots').stream()
-    
-    plots = {doc.to_dict()['plot_name']: doc.to_dict() for doc in docs}
-    
-    result = {
-        'schedule' : data,
-        'plots' : plots
-    }
-    print(result)
-
-
-    return jsonify(result)
 
 # WSGI application for Vercel deployment
 application = app
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")

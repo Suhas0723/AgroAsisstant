@@ -1,3 +1,14 @@
+# Secrets — never commit
+.env
 auth.yaml
+*firebase-adminsdk*.json
+*service-account*.json
+
+# User uploads
+uploads/
+static/uploads/
+
 __pycache__/
-tsa-agriculture-app-firebase-adminsdk-4jash-a3a06e84e8.json
+*.pyc
+.DS_Store
+.vercel

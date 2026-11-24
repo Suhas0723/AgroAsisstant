@@ -166,7 +166,12 @@
 
   <script>
 
+    function esc(v) {
+        return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     function formatDesc(type, plant, inches, fert, npk, yield, notes) {
+        [plant, inches, fert, npk, yield, notes] = [plant, inches, fert, npk, yield, notes].map(esc);
         if (type === 'Irrigate') {
             return `Plot: ${plant}<br>Inches: ${inches}` + (notes ? `<br>${notes}` : '');
         } else if (type === 'Fertilize') {
@@ -208,10 +213,10 @@
             $("#calendar").evoCalendar('addCalendarEvent', [
                     {
                         id: Math.random().toString(36).substr(2, 9),
-                        name: event.type,
+                        name: esc(event.type),
                         date: new Date(new Date(event.date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
+                        description: formatDesc(event.type, event.plot || event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });   
@@ -320,20 +325,21 @@
         button.classList.add('loading');
         spinner.style.display = 'flex';
         
-        fetch('/api/AI_schedule')
+        fetch('/api/AI_schedule', { method: 'POST' })
         .then(response => response.json())
         .then(data => {
-            console.log('yoyoyo');
-            console.log(data)
-        
+            if (!Array.isArray(data)) {
+                alert(data.error || 'Could not generate a schedule.');
+                return;
+            }
             data.forEach(event => {
                 $("#calendar").evoCalendar('addCalendarEvent', [
                     {
                         id: Math.random().toString(36).substr(2, 9),
-                        name: event.type,
+                        name: esc(event.type),
                         date: new Date(new Date(event.date).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                         color: colors[event.type],
-                        description: formatDesc(event.type, event.plot, event.inches, event.fert, event.npk, event.yield, event.notes)
+                        description: formatDesc(event.type, event.plot || event.plant, event.inches, event.fert, event.npk, event.yield, event.notes)
                     }
                 ]);
             });     

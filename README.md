@@ -1,20 +1,22 @@
-## StartUp Instructions
+# AgroAssistant
 
-# Step 1:
-- Follow gcloud install instructions: https://cloud.google.com/sdk/docs/install#windows
-- Ensure google cloud sdk folder is located on the PATh
-- Run 'gcloud init' in project folder
-- Sign in using email "REDACTED" with password "REDACTED"
-- Run 'gcloud auth application-default login' in project folder
+Farming assistant web app: AI chatbot, crop tracking, plot mapping, irrigation/fertilizer calendar with an AI scheduler, plant disease diagnosis, and weather/soil data.
 
-# Step 2:
-- Run 'pip install -r requirements.txt'
+## Local setup
 
-# Step 3:
-- Make copy of dist.yaml under TSA-PROJECT called auth.yaml
-- Fill out appropriate API keys
-- auth file with keys will be provided for judges
-- firebase admin keycard file will be provided for judges
+1. `pip install -r requirements.txt`
+2. Copy `.env.example` to `.env` and fill in the keys. For the Firebase Admin key you can either paste the JSON into `FIREBASE_SERVICE_ACCOUNT_JSON` or set `GOOGLE_APPLICATION_CREDENTIALS` to the path of the downloaded key file (keep it outside the repo).
+3. `python app.py` (set `FLASK_DEBUG=1` in `.env` for debug mode)
 
-# Step 4:
-- Run 'python app.py'
+Never commit `.env`, `auth.yaml`, or any service-account JSON — they are git-ignored.
+
+## Deploying
+
+See [DEPLOYMENT.md](DEPLOYMENT.md). All secrets are read from environment variables.
+
+## Security notes
+
+- The server only trusts Firebase **ID tokens** (verified with the Admin SDK) — never a raw `uid` from the browser.
+- Browsers never read or write Firestore directly; deploy `firestore.rules` (deny-all) to enforce that.
+- OpenAI usage is capped per user per day (`AI_DAILY_LIMIT`).
+- Restrict the browser API keys (`FIREBASE_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_MAPS_API_KEY`) to your domain in Google Cloud Console → Credentials.

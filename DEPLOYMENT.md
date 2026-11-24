@@ -34,10 +34,12 @@ This Flask application is configured for deployment on Vercel with SEO optimizat
    vercel
    ```
 
-3. **Set Environment Variables** in Vercel dashboard:
-   - Add your Firebase credentials
-   - Add API keys for external services
-   - Update the domain in sitemap.xml and robots.txt if needed
+3. **Set Environment Variables** in Vercel → Project → Settings → Environment Variables.
+   Every variable in `.env.example` is required except the ones marked optional.
+   `FIREBASE_SERVICE_ACCOUNT_JSON` takes the full service-account JSON (or a base64 copy).
+   The app refuses to start if a required variable is missing.
+
+4. **Deploy Firestore rules**: paste `firestore.rules` into Firebase Console → Firestore → Rules → Publish.
 
 ## SEO Testing
 
