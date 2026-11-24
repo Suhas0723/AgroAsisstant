@@ -1,7 +1,6 @@
 const firebaseConfig = JSON.parse(document.getElementById('firebase_config').textContent);
 const firebaseApp = firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const firestore = firebase.firestore();
 const signupForm = document.querySelector('.registration.form');
 const loginForm = document.querySelector('.login.form');
 const forgotForm=document.querySelector('.forgot.form');
@@ -82,46 +81,23 @@ signupBtn.addEventListener('click', async () => {
     coordinates = coords;
     return auth.createUserWithEmailAndPassword(email, password);
   })
-    .then((userCredential) => {
-      //console.log("YOoooooooOOOo")
-      const user = userCredential.user;
-      const uid = user.uid;
-        console.log('User data saved to Firestore');
-        firestore.collection('users').doc(uid).set({
-          name: name,
-          username: username,
-          email: email,
-          address: address,
-          coordinates: coordinates,
-      })
-      fetch('/api/create_user', {
+    .then((userCredential) => userCredential.user.getIdToken())
+    .then((idToken) => fetch('/api/create_user', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uid: uid,
+          idToken: idToken,
           name: name,
           username: username,
-          email: email,
           address: address,
           coordinates: coordinates,
         }),
-      })
-        .then((response) => {
-          if (response.ok) {
-            return response.json();
-          } else {
-            throw new Error('Failed to save user data to backend');
-          }
-        })
-        .then((data) => {
-          console.log('User data saved to Flask backend:', data);
-        })
-        .catch((error) => {
-          console.error('Error saving user data to backend:', error.message);
-        });
-
+      }))
+    .then((response) => {
+      if (!response.ok) throw new Error('Failed to save your profile. Please try again.');
+      return response.json();
+    })
+    .then(() => {
         signupForm.style.display = 'none';
         loginForm.style.display = 'block';
         forgotForm.style.display = 'none';
@@ -135,33 +111,20 @@ loginBtn.addEventListener('click', () => {
   const email = document.querySelector('#inUsr').value.trim();
   const password = document.querySelector('#inPass').value;
   auth.signInWithEmailAndPassword(email, password)
-    .then((userCredential) => {
-      const user = userCredential.user;
-      fetch('/api/login_user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            uid: user.uid,
-            email: user.email,
-          }),
-        })
-          .then((response) => {
-            if (response.ok) {
-              return response.json();
-            } else {
-              throw new Error('Failed to log in on the backend');
-            }
-          })
-          .then((data) => {
-            console.log('Login data sent to Flask backend:', data);
-            location.href = "/dashboard"; 
-          })
-          .catch((error) => {
-            console.error('Error logging in on the backend:', error.message);
-          });
-    })
+    .then((userCredential) => userCredential.user.getIdToken())
+    .then((idToken) => fetch('/api/login_user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: idToken }),
+      })
+      .then((response) => {
+        if (!response.ok) throw new Error('Failed to log in on the backend');
+        location.href = "/dashboard";
+      })
+      .catch((error) => {
+        console.error('Error logging in on the backend:', error.message);
+        document.getElementById('wrongWarning').textContent = 'Login failed. Please try again.';
+      }))
     .catch((error) => {
       document.getElementById('wrongWarning').textContent = 'Invalid email or password.'
     });

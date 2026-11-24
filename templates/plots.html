@@ -718,9 +718,10 @@
             headers: { "X-Requested-With": "XMLHttpRequest" },
             body: data
           })
-            .then(res => {
-              if (!res.ok) throw new Error(res.status);
-              return res.json();
+            .then(async res => {
+              const json = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(json.error || `Save failed (${res.status})`);
+              return json;
             })
             .then(json => {
               document.getElementById("save-modal").style.display = "none";
@@ -728,6 +729,7 @@
             })
             .catch(err => {
               console.error(err);
+              alert(err.message);
             });
         });
 
